@@ -30,30 +30,38 @@ fc_types = ['fc','hc']
 base_url = "https://service.weatherimpact.com/api/data/bangladesh_s2s/"
 header = {"authkey": "b19e4b0bf632513ab7e4637a696ba247"}
 
-# Set modeldate at yesterday
-modeldate = datetime.datetime.today() - datetime.timedelta(1)
-modeldate = datetime.datetime(modeldate.year,
-                              modeldate.month,
-                              modeldate.day,
-                              0,0)
-modeldatestr_api = modeldate.strftime("%Y-%m-%d")
-modeldatestr_out = modeldate.strftime("%Y%m%d")
+# Set the date of today
+today = datetime.datetime.today()
+today = datetime.datetime(today.year,
+                          today.month,
+                          today.day,
+                          0,0)
 
-# Download the files for all variables, resolutions and forecast types
-for var in variables:
-    for res in resolutions:
-        for fc_type in fc_types:
-            
-            # Create the download url
-            url_add = f"ecmwf_{fc_type}_{var}_{res}?datetime={modeldatestr_api}&format=netcdf"
-            url = base_url + url_add
-            
-            # Do the api request
-            r = requests.get(url, headers=header)
-            
-            # Write the response in a file
-            output_fn = f'{output_dir}ecmwf_{fc_type}_{var}_{modeldatestr_out}_{res}.nc'
-            
-            file = open(output_fn, "wb")
-            file.write(r.content)
-            file.close()
+# make a loop, starting at today until 5 days back to download the data
+for timedelta in range(6): 
+    modeldate = today - datetime.timedelta(timedelta)
+    modeldatestr_api = modeldate.strftime("%Y-%m-%d")
+    modeldatestr_out = modeldate.strftime("%Y%m%d")
+    
+    # Download the files for all variables, resolutions and forecast types
+    for var in variables:
+        for res in resolutions:
+            for fc_type in fc_types:
+                
+                # Create the download url
+                url_add = f"ecmwf_{fc_type}_{var}_{res}?datetime={modeldatestr_api}&format=netcdf"
+                url = base_url + url_add
+                
+                # Do the api request
+                r = requests.get(url, headers=header)
+                
+                # Check the status code. If the code is 200, the request is successful
+                # Save the data if request is successful
+                if r.status_code == 200:
+                
+                    # Write the response in a file
+                    output_fn = f'{output_dir}ecmwf_{fc_type}_{var}_{modeldatestr_out}_{res}.nc'
+                    
+                    file = open(output_fn, "wb")
+                    file.write(r.content)
+                    file.close()
