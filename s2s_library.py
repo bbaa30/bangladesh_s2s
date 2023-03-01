@@ -10,6 +10,7 @@ import xarray as xr
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import cmocean
+import math
 import cartopy.crs as ccrs
 import cartopy.feature as cf
 import cartopy.mpl.ticker as cticker
@@ -20,10 +21,10 @@ import collections
 import os
 from shapely.geometry import shape, Polygon
 
-def combine_models(ecmwf_available, eccc_available, var,
-                   obs_ecm, obs_ecc,
-                   ecm_fc_daily, ecc_fc_daily,
-                   ecm_hc_daily, ecc_hc_daily):
+def combine_models(ecmwf_available, eccc_available, ncep_available,
+                   obs_ecm, obs_ecc, obs_cfsv2,
+                   ecm_fc_daily, ecc_fc_daily, cfsv2_fc_daily,
+                   ecm_hc_daily, ecc_hc_daily, cfsv2_hc_daily):
     '''
     Function that combines the multiple models to a single dataset.
     Currently only ECMWF and ECCC are implemented. Later on, other datasets
@@ -46,54 +47,125 @@ def combine_models(ecmwf_available, eccc_available, var,
         hc_daily: xr.DataArray: the multi-model hindcasts
         models: str: string with the models that are used
     '''
+    n_models = 0
     
-    if ecmwf_available == True and eccc_available == True:
-        # Combine the ECMWF and ECCC data
+    if ecmwf_available == True and eccc_available == True and ncep_available == True:
+        # Combine the ECMWF, ECCC and NCEP data
+        n_models = 3
     
         # Check for overlapping dates in the observations and hindcasts
-        days_to_take_ecm = [obs_ecm.time[ii].values in obs_ecc.time.values for ii in range(len(obs_ecm.time))]
-        days_to_take_ecc = [obs_ecc.time[ii].values in obs_ecm.time.values for ii in range(len(obs_ecc.time))]
+        days_to_take_ecm = [(obs_ecm.time[ii].values in obs_ecc.time.values or 
+                             obs_ecm.time[ii].values in obs_cfsv2.time.values) for ii in range(len(obs_ecm.time))]
+        days_to_take_ecc = [(obs_ecc.time[ii].values in obs_ecm.time.values or 
+                             obs_ecc.time[ii].values in obs_cfsv2.time.values) for ii in range(len(obs_ecc.time))]
+        days_to_take_cfs = [(obs_cfsv2.time[ii].values in obs_ecm.time.values or 
+                             obs_cfsv2.time[ii].values in obs_ecc.time.values) for ii in range(len(obs_cfsv2.time))]
         
         # And take the overlapping forecast time steps
         days_to_take_ecm_fc = [ecm_fc_daily.time[ii].values in ecc_fc_daily.time.values for ii in range(len(ecm_fc_daily.time))]
         days_to_take_ecc_fc = [ecc_fc_daily.time[ii].values in ecm_fc_daily.time.values for ii in range(len(ecc_fc_daily.time))]
+        days_to_take_cfs_fc = [cfsv2_fc_daily.time[ii].values in cfsv2_fc_daily.time.values for ii in range(len(cfsv2_fc_daily.time))]
         
         # Take out the overlapping dates
         obs_ecm = obs_ecm[days_to_take_ecm]
         obs_ecc = obs_ecc[days_to_take_ecc]
+        obs_cfsv2 = obs_cfsv2[days_to_take_cfs]
         
         ecm_hc_daily = ecm_hc_daily[days_to_take_ecm]
         ecc_hc_daily = ecc_hc_daily[days_to_take_ecc]
+        cfsv2_hc_daily = cfsv2_hc_daily[days_to_take_cfs]
         
         ecm_fc_daily = ecm_fc_daily[days_to_take_ecm_fc]
         ecc_fc_daily = ecc_fc_daily[days_to_take_ecc_fc]
+        cfsv2_fc_daily = cfsv2_fc_daily[days_to_take_cfs_fc]
         
         # Set eccc members after ecmwf members to avoid conflicts with merging
         ecc_fc_daily = ecc_fc_daily.assign_coords(member=ecc_fc_daily['member']+ecm_fc_daily['member'][-1]+1)
         ecc_hc_daily = ecc_hc_daily.assign_coords(member=ecc_hc_daily['member']+ecm_hc_daily['member'][-1]+1)
         
-        # Set names to merge datasets
-        ecm_fc_daily.name = var
-        ecc_fc_daily.name = var
-        ecm_hc_daily.name = var
-        ecc_hc_daily.name = var
+        # Set cfsv2 members after eccc members
+        cfsv2_fc_daily = cfsv2_fc_daily.assign_coords(member=cfsv2_fc_daily['member']+ecc_fc_daily['member'][-1]+1)
+        cfsv2_hc_daily = cfsv2_hc_daily.assign_coords(member=cfsv2_hc_daily['member']+ecc_hc_daily['member'][-1]+1)
         
         # Merge datasets
         obs = obs_ecm.copy()
-        fc_daily = xr.merge((ecm_fc_daily, ecc_fc_daily))
-        hc_daily = xr.merge([ecm_hc_daily, ecc_hc_daily])
-        
-        # Set back to DataArray
-        fc_daily = fc_daily.to_array()[0]
-        hc_daily = hc_daily.to_array()[0]
+        fc_daily = xr.concat((ecm_fc_daily, ecc_fc_daily, cfsv2_fc_daily), dim='member')
+        hc_daily = xr.concat([ecm_hc_daily, ecc_hc_daily, cfsv2_hc_daily], dim='member')
     
         # Remove old variables
         del obs_ecm, obs_ecc, ecm_fc_daily, ecc_fc_daily, ecm_hc_daily, ecc_hc_daily
         
-        models = 'multi_model'
+        models = 'mm_ecmwf_ncep_eccc'
     
-    elif ecmwf_available == True and eccc_available == False:
+    elif ecmwf_available == True and eccc_available == True and ncep_available == False:
+        fc1 = ecm_fc_daily.copy()
+        fc2 = ecc_fc_daily.copy()
+        hc1 = ecm_hc_daily.copy()
+        hc2 = ecc_hc_daily.copy()
+        obs1 = obs_ecm.copy()
+        obs2 = obs_ecc.copy()
+        
+        n_models = 2
+        models = 'mm_ecmwf_eccc'
+    
+    elif ecmwf_available == True and eccc_available == False and ncep_available == True:
+        fc1 = ecm_fc_daily.copy()
+        fc2 = cfsv2_fc_daily.copy()
+        hc1 = ecm_hc_daily.copy()
+        hc2 = cfsv2_hc_daily.copy()
+        obs1 = obs_ecm.copy()
+        obs2 = obs_cfsv2.copy()
+        
+        n_models = 2
+        models = 'mm_ecmwf_ncep'
 
+    elif ecmwf_available == False and eccc_available == True and ncep_available == True:
+        fc1 = cfsv2_fc_daily.copy()
+        fc2 = ecc_fc_daily.copy()
+        hc1 = cfsv2_hc_daily.copy()
+        hc2 = ecc_hc_daily.copy()
+        obs1 = obs_cfsv2.copy()
+        obs2 = obs_ecc.copy()
+        
+        n_models = 2
+        models = 'mm_ncep_eccc'
+    
+    if n_models == 2:
+    
+        # Check for overlapping dates in the observations and hindcasts
+        days_to_take_1 = [obs1.time[ii].values in obs2.time.values for ii in range(len(obs1.time))]
+        days_to_take_2 = [obs2.time[ii].values in obs1.time.values for ii in range(len(obs2.time))]
+        
+        # And take the overlapping forecast time steps
+        days_to_take_1_fc = [fc1.time[ii].values in fc2.time.values for ii in range(len(fc1.time))]
+        days_to_take_2_fc = [fc2.time[ii].values in fc1.time.values for ii in range(len(fc2.time))]
+        
+        # Take out the overlapping dates
+        obs1 = obs1[days_to_take_1]
+        obs2 = obs2[days_to_take_2]
+
+        hc1 = hc1[days_to_take_1]
+        hc2 = hc2[days_to_take_2]
+        
+        fc1 = fc1[days_to_take_1_fc]
+        fc2 = fc2[days_to_take_2_fc]
+        
+        # Set eccc members after ecmwf members to avoid conflicts with merging
+        fc2 = fc2.assign_coords(member=fc2['member']+fc1['member'][-1]+1)
+        hc2 = hc2.assign_coords(member=hc2['member']+hc1['member'][-1]+1)
+        
+        # Merge datasets
+        obs = obs1.copy()
+        fc_daily = xr.concat((fc1, fc2), dim='member')
+        hc_daily = xr.concat([hc1, hc2], dim='member')
+        
+        # Remove old variables
+        del obs_ecm, obs_ecc, ecm_fc_daily, ecc_fc_daily, ecm_hc_daily, ecc_hc_daily
+                
+    if ecmwf_available == True and eccc_available == False and ncep_available == False:
+        
+        n_models = 1
+        
         # Only take ECMWF datasets
         obs = obs_ecm.copy()
         fc_daily = ecm_fc_daily.copy()
@@ -101,7 +173,9 @@ def combine_models(ecmwf_available, eccc_available, var,
         
         models = 'ecmwf'
         
-    elif ecmwf_available == False and eccc_available == True:
+    elif ecmwf_available == False and eccc_available == True and ncep_available == False:
+
+        n_models = 1
 
         # Only take ECCC datasets
         obs = obs_ecc.copy()
@@ -109,8 +183,19 @@ def combine_models(ecmwf_available, eccc_available, var,
         hc_daily = ecc_hc_daily.copy()
     
         models = 'eccc'
+
+    elif ecmwf_available == False and eccc_available == False and ncep_available == True:
+
+        n_models = 1
+
+        # Only take ECCC datasets
+        obs = obs_cfsv2.copy()
+        fc_daily = cfsv2_fc_daily.copy()
+        hc_daily = cfsv2_hc_daily.copy()
     
-    else:
+        models = 'ncep'
+        
+    if n_models < 1:
         
         # Return Nones
         obs = None
@@ -301,24 +386,51 @@ def plot_forecast(var, period, deterministic_fc_smooth, deterministic_anomaly,
     '''
     
     # Set the metadata for the figures
-    if var in ['tmin', 'tmax']:
-        cmap_det = cmocean.cm.thermal
+    if var == 'tmin':
+        cmap_det = 'gist_ncar'
         cmap_anom = 'RdBu_r'
         cmap_below = 'Blues'
         cmap_above = 'YlOrRd'
-        levels_det = np.linspace(5,45,41)
-        ticks_det = np.linspace(5,45,5)
+        norm_det = mpl.colors.Normalize(vmin=0, vmax=55)
+        levels_det = np.linspace(5,30,26)
+        ticks_det = np.linspace(5,30,6)
         levels_anom = np.linspace(-6,6,25)
         ticks_anom = np.linspace(-6,6,5)
-        label_det = u'Temperature (\N{DEGREE SIGN}C)'
+        label_det = u'Minimum temperature (\N{DEGREE SIGN}C)'
+        label_anom = u'Temperature anomaly (\N{DEGREE SIGN}C)'
+    elif var == 'tmax':
+        cmap_det = 'gist_ncar'
+        cmap_anom = 'RdBu_r'
+        cmap_below = 'Blues'
+        cmap_above = 'YlOrRd'
+        norm_det = mpl.colors.Normalize(vmin=0, vmax=55)
+        levels_det = np.linspace(15,45,31)
+        ticks_det = np.linspace(15,45,7)
+        levels_anom = np.linspace(-6,6,25)
+        ticks_anom = np.linspace(-6,6,5)
+        label_det = u'Maximum temperature (\N{DEGREE SIGN}C)'
         label_anom = u'Temperature anomaly (\N{DEGREE SIGN}C)'
     elif var == 'tp':
+        # Set negative values to 0
+        deterministic_fc_smooth.values[deterministic_fc_smooth.values <= 0.] = 0.
+        
+        # Make the maximum of precipitation dyanmic
+        max_tp = np.nanmax(deterministic_fc_smooth)
+        
+        # Ceil value up to next 10
+        max_tp = math.ceil(max_tp/10)*10
+        
+        if max_tp < 30:
+            # Set the maximum at 30 mm if the maximum is lower
+            max_tp = 30.
+        
+        norm_det = mpl.colors.Normalize(vmin=0, vmax=max_tp)
         cmap_det = cmocean.cm.haline_r
         cmap_anom = 'BrBG'
         cmap_below = 'YlOrRd'
         cmap_above = 'Greens'
-        levels_det = np.linspace(0,400,17)
-        ticks_det = np.linspace(0,400,5)
+        levels_det = np.linspace(0,max_tp,17)
+        ticks_det = np.linspace(0,max_tp,5)
         levels_anom = np.linspace(-50,50,21)
         ticks_anom = np.linspace(-50,50,5)
         label_det = 'Precipitation (mm)'
@@ -349,7 +461,7 @@ def plot_forecast(var, period, deterministic_fc_smooth, deterministic_anomaly,
     # Make a filled contour plot
     cs0=axes[0].contourf(deterministic_fc_smooth['longitude'], deterministic_fc_smooth['latitude'], deterministic_fc_smooth,
                          transform = ccrs.PlateCarree(), levels = levels_det, 
-                         cmap=cmap_det, extend='both')
+                         norm=norm_det, cmap=cmap_det, extend='both')
 
     cax0 = inset_axes(axes[0], width='100%', height='5%', loc='lower left', 
                       bbox_to_anchor=(0., -0.05, 1, 1), bbox_transform=axes[0].transAxes, borderpad=0.1)
@@ -378,7 +490,7 @@ def plot_forecast(var, period, deterministic_fc_smooth, deterministic_anomaly,
     cax2a = inset_axes(axes[2], width='35%', height='5%', loc='lower left', 
                        bbox_to_anchor=(0., -0.05, 1, 1), bbox_transform=axes[2].transAxes, borderpad=0.1)
     cax2b = inset_axes(axes[2], width='20%', height='5%', loc='lower center', 
-                       bbox_to_anchor=(0., -0.05, 1, 1), bbox_transform=axes[2].transAxes, borderpad=0.07)
+                       bbox_to_anchor=(0., -0.05, 1, 1), bbox_transform=axes[2].transAxes, borderpad=0.05)
     cax2c = inset_axes(axes[2], width='35%', height='5%', loc='lower right', 
                        bbox_to_anchor=(0., -0.05, 1, 1), bbox_transform=axes[2].transAxes, borderpad=0.1)
     

@@ -104,7 +104,7 @@ shape_info = {0: {'name_column': 1,             # Level 0 is the country
                   'name_shapes': 'union'}}
 
 # Set level for shape aggregation, choose from 0, 1, 2, 3 or 4
-shp_level = 1
+shp_level = 2
 
 # Load shape information
 shp_fn = f'gadm41_BGD_shp/gadm41_BGD_{shp_level}.shp'
@@ -122,6 +122,9 @@ shape_data = pd.DataFrame(index=range(len(gpd_data)), columns=[shape_name, 'tmax
                                                                'tmax_week3+4', 'tmin_week3+4', 'tp_week3+4'])
 shape_data[shape_name] = gpd_data.iloc[:,name_col].values
 shape_data = shape_data.set_index(shape_name)
+
+# Make a dictionary for all models
+model_info = {}
 
 # Create an empty array for data integrated to divisions
 fc_shp = {}
@@ -158,6 +161,9 @@ for timedelta in range(6):
             ecm_hc_daily = xr.open_dataarray(fn_hc)
             
             ecmwf_available = True
+            model_info['ecmwf'] = {'forecast': ecm_fc_daily,
+                                   'hindcast': ecm_hc_daily,
+                                   'observations': obs_ecm}
         except:
             ecmwf_available = False
             obs_ecm = None
@@ -175,36 +181,193 @@ for timedelta in range(6):
             ecc_hc_daily = xr.open_dataarray(fn_hc)
             
             eccc_available = True
+            model_info['eccc'] = {'forecast': ecc_fc_daily,
+                                  'hindcast': ecc_hc_daily,
+                                  'observations': obs_ecc}
         except:
             eccc_available = False
             obs_ecc = None
             ecc_fc_daily = None
             ecc_hc_daily = None
+
+        # Try to open NCEP data
+        try:
+            fn_hc = f"{input_dir}ncep_hc_regrid_{var}_{modeldatestr}.nc"
+            fn_fc = f"{input_dir}ncep_fc_regrid_{var}_{modeldatestr}.nc"
+            fn_obs = f"{input_dir}obs_ncep_{var}_{modeldatestr}.nc"
         
+            obs_cfsv2 = xr.open_dataarray(fn_obs)
+            cfsv2_fc_daily = xr.open_dataarray(fn_fc)
+            cfsv2_hc_daily = xr.open_dataarray(fn_hc)
+            
+            ncep_available = True
+            model_info['ncep'] = {'forecast': cfsv2_fc_daily,
+                                  'hindcast': cfsv2_hc_daily,
+                                  'observations': obs_cfsv2}
+        except:
+            ncep_available = False
+            obs_cfsv2 = None
+            cfsv2_fc_daily = None
+            cfsv2_hc_daily = None
+            
         # Combine models
-        obs, fc_daily, hc_daily, models = s2s.combine_models(ecmwf_available, eccc_available, var,
-                                                             obs_ecm, obs_ecc,
-                                                             ecm_fc_daily, ecc_fc_daily,
-                                                             ecm_hc_daily, ecc_hc_daily)
+        obs_mm, fc_daily_mm, hc_daily_mm, models = s2s.combine_models(ecmwf_available, eccc_available, ncep_available,
+                                                                      obs_ecm, obs_ecc, obs_cfsv2,
+                                                                      ecm_fc_daily, ecc_fc_daily, cfsv2_fc_daily,
+                                                                      ecm_hc_daily, ecc_hc_daily, cfsv2_hc_daily)
         
         # If there is no data available, continue
         if models == 'No data':
             print(f'No data available for {modeldate}, continue')
             break
+        
+        if len(model_info) > 1:
+            model_info['multi_model'] = {'forecast': fc_daily_mm,
+                                         'hindcast': hc_daily_mm,
+                                         'observations': obs_mm}
     
         # Set mask to mask all data points outside of Bangladesh
         # Use the Tmax observations to load this mask
         if var == 'tmax':
-            mask = np.isnan(obs[0].values)
+            mask = np.isnan(obs_mm[0].values)
         print(f'Make the forecast for {models}')
         
         # Loop over the different periods (week 1, week 2 and week 3+4)
         for period in start_end_times.keys():
             print(f'Generate forecast for {period}.')
             wknr = start_end_times[period]['wknr']
+
+            ######################################################
+            ##                                                  ##
+            ##     Do short skill analysis of hindcast data     ##
+            ##                                                  ##
+            ######################################################
             
+            # Do the hindcast skill analysis for all individual models
+            for hc_model in model_info.keys():
+                
+                obs = model_info[hc_model]['observations']
+                fc_daily = model_info[hc_model]['forecast']
+                hc_daily = model_info[hc_model]['hindcast']                
+                
+                # Resample data to only specific period
+                obs_wk, fc_wk, hc_wk = s2s.resample_data(obs, fc_daily, hc_daily, var,
+                                                         start_end_times, period, resample)
+                        
+                # Add members to obs_wk to be able to use it in X-Cast
+                obs_wk = obs_wk.expand_dims({"M":[0]})
+                
+                # Add one time step to fc_wk to be able to use it in X-Cast
+                fc_wk = fc_wk.expand_dims({'time': [modeldate]})
+                
+                # Calculate BMD tercile categories
+                bdohc = xc.RankedTerciles()
+                bdohc.fit(obs_wk)
+                bd_ohc_wk = bdohc.transform(obs_wk)
+        
+
+            
+                print('Start with cross validation on hindcasts of '+hc_model)
+                window = 3
+                   
+                mlr_xval = []
+                mc_xval = []
+                
+                i_test=0
+                # Do a cross validation of the hindcast models
+                for x_train, y_train, x_test, y_test in xc.CrossValidator(hc_wk, obs_wk, window=window, x_feature_dim='member'):
+                    
+                    ohc_train = xc.RankedTerciles()
+                    ohc_train.fit(y_train)
+                    ohc_y_train = ohc_train.transform(y_train)
+                    
+                    mlr = xc.rMultipleLinearRegression()
+                    mlr.fit(x_train, y_train, rechunk=False, x_feature_dim='member')
+                    mlr_preds = mlr.predict(x_test.rename({'member': 'M'}), rechunk=False, x_feature_dim='M')
+                    mlr_xval.append(mlr_preds.isel(time=window // 2))
+            
+                    mc = xc.cMemberCount()
+                    mc.fit(x_train.rename({'member': 'M'}), ohc_y_train, x_feature_dim='M')
+                    mc_preds = mc.predict(x_test, x_feature_dim='member')
+                    mc_xval.append(mc_preds.isel(time=window // 2))
+                    
+                    i_test += 1
+                    print('Loop '+str(i_test)+' / '+str((len(obs_wk.time))))
+                
+                # Combine the cross validated output to a single dataset
+                mlr_hcst = xr.concat(mlr_xval, 'time').mean('ND')
+                mc_hcst = xr.concat(mc_xval, 'time')
+                    
+                # Show skill of hindcasts
+                print('Calculate and plot skill scores of hindcast')
+        
+                # Calculate and plot Pearson Correlation
+                pearson = np.squeeze( xc.Pearson(mlr_hcst, obs_wk, x_feature_dim='M'), axis=[2,3])
+                levels_pearson = np.linspace(-1,1,21)
+                s2s.plot_skill_score(pearson, obs, levels_pearson, 'RdBu', 'both', 
+                                      f'Pearson correlation for {var} {period}',
+                                      fig_dir_hc,
+                                      f'hc_{var}_pearson_{period}_{modeldatestr}_{hc_model}.png')
+                
+                # Calculate and plot Index of AGreement
+                ioa = np.squeeze( xc.IndexOfAgreement(mlr_hcst, obs_wk, x_feature_dim='M'), axis=[2,3])
+                levels_ioa = np.linspace(0,1,11)
+                s2s.plot_skill_score(ioa, obs, levels_ioa, 'Blues', 'both',
+                                      f'IndexOfAgreement for {var} {period}',
+                                      fig_dir_hc,
+                                      f'hc_{var}_ioa_{period}_{modeldatestr}_{hc_model}.png')        
+                
+                # Calculate and plot Generalized ROC
+                groc = np.squeeze(xc.GeneralizedROC( mc_hcst, bd_ohc_wk, x_feature_dim='member'), axis = [2,3])
+                levels_groc = np.linspace(0.5,1,11)
+                cmapg = plt.get_cmap('autumn_r').copy()
+                cmapg.set_under('lightgray')
+                s2s.plot_skill_score(groc, obs, levels_groc, cmapg, 'min',
+                                      f'Generalized ROC for {var} {period}',
+                                      fig_dir_hc,
+                                      f'hc_{var}_groc_{period}_{modeldatestr}_{hc_model}.png')  
+                
+                # Calculate and plot Rank Probability Skill Score
+                
+                # Get the climatological RPS for the skill score
+                climatological_odds = xr.ones_like(mc_hcst) * 0.333
+                
+                skillscore_prec_wk = np.squeeze(xc.RankProbabilityScore( mc_hcst, bd_ohc_wk, x_feature_dim='member'), axis = [2,3])
+                skillscore_climate_wk = np.squeeze(xc.RankProbabilityScore( climatological_odds, bd_ohc_wk, x_feature_dim='member'), axis=[2,3])
+                  
+                rpss = 1 - skillscore_prec_wk / skillscore_climate_wk
+                
+                levels_rpss = np.linspace(0.,0.2,11)
+                s2s.plot_skill_score(rpss, obs, levels_rpss, cmapg, 'both',
+                                      f'RPSS for {var} {period}',
+                                      fig_dir_hc,
+                                      f'hc_{var}_rpss_{period}_{modeldatestr}_{hc_model}.png') 
+                
+                # Calculate and plot the Brier Skill Score for all 3 categories (AN/NN/BN)
+                skillscore_prec_wk = np.squeeze(xc.BrierScore( mc_hcst, bd_ohc_wk, x_feature_dim='member'), axis = [3])
+                skillscore_climate_wk = np.squeeze(xc.BrierScore( climatological_odds, bd_ohc_wk, x_feature_dim='member'), axis=[3])
+             
+                bss = 1 - skillscore_prec_wk / skillscore_climate_wk
+                
+                levels_bss = np.linspace(0.,1,11)
+                   
+                for idx, cat in zip([0,1,2],['BN','NN','AN']):
+                    
+                    data_plot = bss[:,:,idx]
+                    
+                    s2s.plot_skill_score(data_plot, obs, levels_bss, cmapg, 'min',
+                                          f'{cat} brier skill score for {var} {period}',
+                                          fig_dir_hc,
+                                          f'hc_{var}_bss_{cat}_{period}_{modeldatestr}_{hc_model}.png') 
+                
+    
+            ######################################################
+            ##                                                  ##
+            ##            Make operational forecast             ##
+            ##                                                  ##
+            ######################################################
             # Resample data to only specific period
-            obs_wk, fc_wk, hc_wk = s2s.resample_data(obs, fc_daily, hc_daily, var,
+            obs_wk, fc_wk, hc_wk = s2s.resample_data(obs_mm, fc_daily_mm, hc_daily_mm, var,
                                                      start_end_times, period, resample)
                     
             # Add members to obs_wk to be able to use it in X-Cast
@@ -217,113 +380,7 @@ for timedelta in range(6):
             bdohc = xc.RankedTerciles()
             bdohc.fit(obs_wk)
             bd_ohc_wk = bdohc.transform(obs_wk)
-    
-            ######################################################
-            ##                                                  ##
-            ##     Do short skill analysis of hindcast data     ##
-            ##                                                  ##
-            ######################################################
-        
-            print('Start with calibration on hindcasts')
-            window = 3
-               
-            mlr_xval = []
-            mc_xval = []
-            
-            i_test=0
-            # Do a cross validation of the hindcast models
-            for x_train, y_train, x_test, y_test in xc.CrossValidator(hc_wk, obs_wk, window=window, x_feature_dim='member'):
                 
-                ohc_train = xc.RankedTerciles()
-                ohc_train.fit(y_train)
-                ohc_y_train = ohc_train.transform(y_train)
-                
-                mlr = xc.rMultipleLinearRegression()
-                mlr.fit(x_train, y_train, rechunk=False, x_feature_dim='member')
-                mlr_preds = mlr.predict(x_test.rename({'member': 'M'}), rechunk=False, x_feature_dim='M')
-                mlr_xval.append(mlr_preds.isel(time=window // 2))
-        
-                mc = xc.cMemberCount()
-                mc.fit(x_train.rename({'member': 'M'}), ohc_y_train, x_feature_dim='M')
-                mc_preds = mc.predict(x_test, x_feature_dim='member')
-                mc_xval.append(mc_preds.isel(time=window // 2))
-                
-                i_test += 1
-                print('Loop '+str(i_test)+' / '+str((len(obs_wk.time))))
-            
-            # Combine the cross validated output to a single dataset
-            mlr_hcst = xr.concat(mlr_xval, 'time').mean('ND')
-            mc_hcst = xr.concat(mc_xval, 'time')
-                
-            # Show skill of hindcasts
-            print('Calculate and plot skill scores of hindcast')
-    
-            # Calculate and plot Pearson Correlation
-            pearson = np.squeeze( xc.Pearson(mlr_hcst, obs_wk, x_feature_dim='M'), axis=[2,3])
-            levels_pearson = np.linspace(-1,1,21)
-            s2s.plot_skill_score(pearson, obs, levels_pearson, 'RdBu', 'both', 
-                                  f'Pearson correlation for {var} {period}',
-                                  fig_dir_hc,
-                                  f'hc_{var}_pearson_{period}_{modeldatestr}_{models}.png')
-            
-            # Calculate and plot Index of AGreement
-            ioa = np.squeeze( xc.IndexOfAgreement(mlr_hcst, obs_wk, x_feature_dim='M'), axis=[2,3])
-            levels_ioa = np.linspace(0,1,11)
-            s2s.plot_skill_score(ioa, obs, levels_ioa, 'Blues', 'both',
-                                  f'IndexOfAgreement for {var} {period}',
-                                  fig_dir_hc,
-                                  f'hc_{var}_ioa_{period}_{modeldatestr}_{models}.png')        
-            
-            # Calculate and plot Generalized ROC
-            groc = np.squeeze(xc.GeneralizedROC( mc_hcst, bd_ohc_wk, x_feature_dim='member'), axis = [2,3])
-            levels_groc = np.linspace(0.5,1,11)
-            cmapg = plt.get_cmap('autumn_r').copy()
-            cmapg.set_under('lightgray')
-            s2s.plot_skill_score(groc, obs, levels_groc, cmapg, 'min',
-                                  f'Generalized ROC for {var} {period}',
-                                  fig_dir_hc,
-                                  f'hc_{var}_groc_{period}_{modeldatestr}_{models}.png')  
-            
-            # Calculate and plot Rank Probability Skill Score
-            
-            # Get the climatological RPS for the skill score
-            climatological_odds = xr.ones_like(mc_hcst) * 0.333
-            
-            skillscore_prec_wk = np.squeeze(xc.RankProbabilityScore( mc_hcst, bd_ohc_wk, x_feature_dim='member'), axis = [2,3])
-            skillscore_climate_wk = np.squeeze(xc.RankProbabilityScore( climatological_odds, bd_ohc_wk, x_feature_dim='member'), axis=[2,3])
-              
-            rpss = 1 - skillscore_prec_wk / skillscore_climate_wk
-            
-            levels_rpss = np.linspace(0.,0.2,11)
-            s2s.plot_skill_score(rpss, obs, levels_rpss, cmapg, 'both',
-                                  f'RPSS for {var} {period}',
-                                  fig_dir_hc,
-                                  f'hc_{var}_rpss_{period}_{modeldatestr}_{models}.png') 
-            
-            # Calculate and plot the Brier Skill Score for all 3 categories (AN/NN/BN)
-            skillscore_prec_wk = np.squeeze(xc.BrierScore( mc_hcst, bd_ohc_wk, x_feature_dim='member'), axis = [3])
-            skillscore_climate_wk = np.squeeze(xc.BrierScore( climatological_odds, bd_ohc_wk, x_feature_dim='member'), axis=[3])
-         
-            bss = 1 - skillscore_prec_wk / skillscore_climate_wk
-            
-            levels_bss = np.linspace(0.,1,11)
-               
-            for idx, cat in zip([0,1,2],['BN','NN','AN']):
-                
-                data_plot = bss[:,:,idx]
-                
-                s2s.plot_skill_score(data_plot, obs, levels_bss, cmapg, 'min',
-                                      f'{cat} brier skill score for {var} {period}',
-                                      fig_dir_hc,
-                                      f'hc_{var}_bss_{cat}_{period}_{modeldatestr}_{models}.png') 
-                
-    
-            ######################################################
-            ##                                                  ##
-            ##            Make operational forecast             ##
-            ##                                                  ##
-            ######################################################
-            
             print('Generate operational forecast')
             # Use Multiple Linear Regression for deterministic foreast
             mlrfc = xc.rMultipleLinearRegression()
@@ -376,14 +433,19 @@ for timedelta in range(6):
                 method = 'average'
                 
                 # Integrate the gridded value to a single value for this polygon
-                key = var+wknr+'_'+district_name.lower()[:4]
+                if "cox" in district_name.lower():
+                    key = var+wknr+'_'+district_name.lower()[:3]
+                elif "feni" in district_name.lower():
+                    key = var+wknr+'_'+district_name.lower()[:4]
+                else:
+                    key = var+wknr+'_'+district_name.lower()[:5]
                 value = np.round(s2s.integrate_grid_to_polygon(np.array([input_grid]), 
                                                                mask_2d, time_axis = 0, 
                                                                method = method),
                                  decimals=1)[0]
                 
                 # Set very low precipitation values at 0 mm
-                if var == 'tp' and value < 5:
+                if var == 'tp' and value < 2:
                     value = 0
                 
                 # Store value in json and dataframe
@@ -393,11 +455,11 @@ for timedelta in range(6):
     # Save the data if there is data
     if models != 'No data':
         # Save the divisional output in a json file for the bulletin
-        with open(output_dir+f'divisional_forecast_{modeldatestr}.json', 'w') as jsfile:
+        with open(output_dir+f'{shape_name}_forecast_{modeldatestr}.json', 'w') as jsfile:
             json.dump(fc_shp, jsfile)
         
         # Save the divisional output in a csv format to be used on BAMIS
-        shape_data.to_csv(output_dir+f'divisional_forecast_{modeldatestr}.csv')
+        shape_data.to_csv(output_dir+f'{shape_name}_forecast_{modeldatestr}.csv')
         
         # Exit the script
         sys.exit()

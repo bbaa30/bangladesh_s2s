@@ -26,7 +26,7 @@ from configparser import ConfigParser
 
 # Read the basic paths from the config file
 config = ConfigParser()
-config.read('config_bd_s2s.ini')
+config.read('/config_bd_s2s.ini')
 
 # Set the directories from the config file
 direc = config['paths']['s2s_dir'] 
@@ -44,6 +44,8 @@ today = datetime.datetime(today.year,
                           today.day,
                           0,0)
 
+aggregation_level = 'district' # Choose from division or district
+
 # Loop over the last 5 days to find the most recent data
 for timedelta in range(6): 
     modeldate = today - datetime.timedelta(timedelta)
@@ -51,7 +53,7 @@ for timedelta in range(6):
     
     try:
         # Load the divisional forecast data (to add in the tables)
-        with open(direc+f'output_forecast/divisional_forecast_{modeldatestr}.json') as jsfile:
+        with open(direc+f'output_forecast/{aggregation_level}_forecast_{modeldatestr}.json') as jsfile:
             forecast_json = json.load(jsfile)   
             
         # Define start and end of the periods
@@ -114,7 +116,7 @@ for timedelta in range(6):
         template.render(context)
         
         # Save the report
-        filename = f'{output_dir}S2S_forecast_bulletin_{modeldatestr}.docx'
+        filename = f'{output_dir}S2S_forecast_bulletin_{modeldatestr}_{aggregation_level}.docx'
         
         template.save(filename)
         
