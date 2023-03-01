@@ -23,6 +23,7 @@ The procedure of producing a forecast is as follows:
  7. Run prepare_ncep_data.py to prepare the NCEP CFSv2 data input
  8. Run the script s2s_operational_forecast.py for the forecast
  9. Run the script generate_bulletin.py to generate a bulletin with the latest forecast
+
 This procedure is also captured in run_all_operational_scripts.py.
 
 Note that the ECMWF data is available twice a week: on Monday and Thursday. The ECCC data is available every Thursday. The NCEP CFSv2 data is available on a daily basis. It is recommended to run the system once per week on Friday, using all 3 models as input. Other models will be added in a later phase.
