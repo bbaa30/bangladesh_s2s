@@ -54,17 +54,26 @@ def combine_models(ecmwf_available, eccc_available, ncep_available,
         n_models = 3
     
         # Check for overlapping dates in the observations and hindcasts
-        days_to_take_ecm = [(obs_ecm.time[ii].values in obs_ecc.time.values or 
-                             obs_ecm.time[ii].values in obs_cfsv2.time.values) for ii in range(len(obs_ecm.time))]
-        days_to_take_ecc = [(obs_ecc.time[ii].values in obs_ecm.time.values or 
-                             obs_ecc.time[ii].values in obs_cfsv2.time.values) for ii in range(len(obs_ecc.time))]
-        days_to_take_cfs = [(obs_cfsv2.time[ii].values in obs_ecm.time.values or 
-                             obs_cfsv2.time[ii].values in obs_ecc.time.values) for ii in range(len(obs_cfsv2.time))]
+        days_to_take_ecm = [(obs_ecm.time[ii].values in obs_ecc.time.values and 
+                             obs_ecm.time[ii].values in obs_cfsv2.time.values) 
+                            for ii in range(len(obs_ecm.time))]
+        days_to_take_ecc = [(obs_ecc.time[ii].values in obs_ecm.time.values and 
+                             obs_ecc.time[ii].values in obs_cfsv2.time.values) 
+                            for ii in range(len(obs_ecc.time))]
+        days_to_take_cfs = [(obs_cfsv2.time[ii].values in obs_ecm.time.values and 
+                             obs_cfsv2.time[ii].values in obs_ecc.time.values) 
+                            for ii in range(len(obs_cfsv2.time))]
         
         # And take the overlapping forecast time steps
-        days_to_take_ecm_fc = [ecm_fc_daily.time[ii].values in ecc_fc_daily.time.values for ii in range(len(ecm_fc_daily.time))]
-        days_to_take_ecc_fc = [ecc_fc_daily.time[ii].values in ecm_fc_daily.time.values for ii in range(len(ecc_fc_daily.time))]
-        days_to_take_cfs_fc = [cfsv2_fc_daily.time[ii].values in cfsv2_fc_daily.time.values for ii in range(len(cfsv2_fc_daily.time))]
+        days_to_take_ecm_fc = [(ecm_fc_daily.time[ii].values in ecc_fc_daily.time.values and
+                                ecm_fc_daily.time[ii].values in cfsv2_fc_daily.time.values)
+                               for ii in range(len(ecm_fc_daily.time))]
+        days_to_take_ecc_fc = [(ecc_fc_daily.time[ii].values in ecm_fc_daily.time.values and
+                                ecc_fc_daily.time[ii].values in cfsv2_fc_daily.time.values)
+                               for ii in range(len(ecc_fc_daily.time))]
+        days_to_take_cfs_fc = [(cfsv2_fc_daily.time[ii].values in ecm_fc_daily.time.values and
+                                cfsv2_fc_daily.time[ii].values in ecc_fc_daily.time.values)
+                               for ii in range(len(cfsv2_fc_daily.time))]
         
         # Take out the overlapping dates
         obs_ecm = obs_ecm[days_to_take_ecm]

@@ -85,64 +85,67 @@ for timelag in [4,3,2,1]:
                 dir_query = '&dir=%2Fcfs.' + modeldate.strftime('%Y%m%d') + '%2F' + modeldate.strftime('%H') + '%2F6hrly_grib_01'
                 
                 query = source_location + file_query + var_level_query + region_query + dir_query
-    
-                # Do the request
-                try:
-                    # There is a maximum requests per minute for gfs download
-                    r = requests.get(query)
-                    time.sleep(2)
-                except Exception as e:
-                    # So if an error is raised because this number has been reached
-                    # Wait for 30 seconds and continue
-                    print(e)
-                    print('Wait for 30 seconds and try again')
-                    time.sleep(30)
-                    r = requests.get(query)            
-    
-                if len(r.content) > 100.:
-                    # Make the local file and save the downloaded data in the file
-                    ftarget = open(target_location + file_query, 'wb')
-                    ftarget.write(r.content)
-                    ftarget.close()
-                else:
-                    # If the file contains less than 1000 bytes, it is emty, so try again once more.
-                    time.sleep(4)
-                    r = requests.get(query)
-                    time.sleep(2)
+                
+                if not os.path.exists(target_location+file_query):
+                    # Do the request
+                    try:
+                        # There is a maximum requests per minute for gfs download
+                        r = requests.get(query)
+                        time.sleep(2)
+                    except Exception as e:
+                        # So if an error is raised because this number has been reached
+                        # Wait for 30 seconds and continue
+                        print(e)
+                        print('Wait for 30 seconds and try again')
+                        time.sleep(30)
+                        r = requests.get(query)            
+        
                     if len(r.content) > 100.:
                         # Make the local file and save the downloaded data in the file
                         ftarget = open(target_location + file_query, 'wb')
                         ftarget.write(r.content)
                         ftarget.close()
                     else:
-                        raise(Exception('File '+file_query+' not yet available.'))
+                        # If the file contains less than 1000 bytes, it is emty, so try again once more.
+                        time.sleep(4)
+                        r = requests.get(query)
+                        time.sleep(2)
+                        if len(r.content) > 100.:
+                            # Make the local file and save the downloaded data in the file
+                            ftarget = open(target_location + file_query, 'wb')
+                            ftarget.write(r.content)
+                            ftarget.close()
+                        else:
+                            raise(Exception('File '+file_query+' not yet available.'))
     
-            
-            # Convert to netcdf
-            ds = xr.open_mfdataset(target_location + 'flxf*', concat_dim='step', combine='nested')
-            
-            # Take the data out of the dataset
-            da_tmin = convert_units(ds.tmin)
-            da_tmax = convert_units(ds.tmax)
-            da_tp = convert_units(ds.rename({'prate':'tp'}).tp)
-            
-            # Convert the time and modeldate dimensions
-            da_tmin = da_tmin.rename({'time': 'modeldate'})
-            da_tmin = da_tmin.assign_coords(step=da_tmin.valid_time).drop('valid_time').rename({'step':'time'})
-    
-            da_tmax = da_tmax.rename({'time': 'modeldate'})
-            da_tmax = da_tmax.assign_coords(step=da_tmax.valid_time).drop('valid_time').rename({'step':'time'})
-            
-            da_tp = da_tp.rename({'time': 'modeldate'})
-            da_tp = da_tp.assign_coords(step=da_tp.valid_time).drop('valid_time').rename({'step':'time'})
-            
-            # Convert to daily values
-            da_tmin = da_tmin.resample(time='24H', base=6).min('time')
-            da_tmax = da_tmax.resample(time='24H', base=6).max('time')
-            da_tp = da_tp.resample(time='24H', base=6).sum('time')
-            
-            # Save as netcdf
-            da_tmin.to_netcdf(fn_tmin)
-            da_tmax.to_netcdf(fn_tmax)
-            da_tp.to_netcdf(fn_tp)
+            try:
+                # Convert to netcdf
+                ds = xr.open_mfdataset(target_location + 'flxf*', concat_dim='step', combine='nested')
+                
+                # Take the data out of the dataset
+                da_tmin = convert_units(ds.tmin)
+                da_tmax = convert_units(ds.tmax)
+                da_tp = convert_units(ds.rename({'prate':'tp'}).tp)
+                
+                # Convert the time and modeldate dimensions
+                da_tmin = da_tmin.rename({'time': 'modeldate'})
+                da_tmin = da_tmin.assign_coords(step=da_tmin.valid_time).drop('valid_time').rename({'step':'time'})
         
+                da_tmax = da_tmax.rename({'time': 'modeldate'})
+                da_tmax = da_tmax.assign_coords(step=da_tmax.valid_time).drop('valid_time').rename({'step':'time'})
+                
+                da_tp = da_tp.rename({'time': 'modeldate'})
+                da_tp = da_tp.assign_coords(step=da_tp.valid_time).drop('valid_time').rename({'step':'time'})
+                
+                # Convert to daily values
+                da_tmin = da_tmin.resample(time='24H', base=6).min('time')
+                da_tmax = da_tmax.resample(time='24H', base=6).max('time')
+                da_tp = da_tp.resample(time='24H', base=6).sum('time')
+                
+                # Save as netcdf
+                da_tmin.to_netcdf(fn_tmin)
+                da_tmax.to_netcdf(fn_tmax)
+                da_tp.to_netcdf(fn_tp)
+            
+            except:
+                print(f'Could not convert to daily values for modeldate: {modeldate}')

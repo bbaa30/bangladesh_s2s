@@ -27,6 +27,7 @@ import geopandas as gpd
 import pandas as pd
 import json
 import s2s_library as s2s
+from scipy.stats import percentileofscore
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -107,7 +108,7 @@ shape_info = {0: {'name_column': 1,             # Level 0 is the country
 shp_level = 2
 
 # Load shape information
-shp_fn = f'gadm41_BGD_shp/gadm41_BGD_{shp_level}.shp'
+shp_fn = direc + f'gadm41_BGD_shp/gadm41_BGD_{shp_level}.shp'
 shp_file = shapefile.Reader(shp_fn)
 shape_mask_dir = direc + f'shape_mask/{shp_level}/'
 gpd_data = gpd.read_file(shp_fn)
@@ -122,6 +123,10 @@ shape_data = pd.DataFrame(index=range(len(gpd_data)), columns=[shape_name, 'tmax
                                                                'tmax_week3+4', 'tmin_week3+4', 'tp_week3+4'])
 shape_data[shape_name] = gpd_data.iloc[:,name_col].values
 shape_data = shape_data.set_index(shape_name)
+
+# Generate a pandas table for the district output for agriculture
+res_cols = ['district', 'indicator_variable','indicator_week','indicator_type','indicator_value']
+results = pd.DataFrame(columns=res_cols)
 
 # Make a dictionary for all models
 model_info = {}
@@ -261,12 +266,7 @@ for timedelta in range(6):
                 fc_wk = fc_wk.expand_dims({'time': [modeldate]})
                 
                 # Calculate BMD tercile categories
-                try:
-                    # The old version of Xcast
-                    bdohc = xc.RankedTerciles()
-                except:
-                    # The new version of Xcast
-                    bdohc = xc.OneHotEncoder()
+                bdohc = xc.RankedTerciles()
                 bdohc.fit(obs_wk)
                 bd_ohc_wk = bdohc.transform(obs_wk)
         
@@ -282,10 +282,7 @@ for timedelta in range(6):
                 # Do a cross validation of the hindcast models
                 for x_train, y_train, x_test, y_test in xc.CrossValidator(hc_wk, obs_wk, window=window, x_feature_dim='member'):
                     
-                    try:
-                        ohc_train = xc.RankedTerciles()
-                    except:
-                        ohc_train = xc.OneHotEncoder()
+                    ohc_train = xc.RankedTerciles()
                     ohc_train.fit(y_train)
                     ohc_y_train = ohc_train.transform(y_train)
                     
@@ -366,9 +363,9 @@ for timedelta in range(6):
                     s2s.plot_skill_score(data_plot, obs, levels_bss, cmapg, 'min',
                                           f'{cat} brier skill score for {var} {period}',
                                           fig_dir_hc,
-                                          f'hc_{var}_bss_{cat}_{period}_{modeldatestr}_{hc_model}.png') 
+                                          f'hc_{var}_bss_{cat}_{period}_{modeldatestr}_{hc_model}.png'.lower()) 
                 
-    
+            
             ######################################################
             ##                                                  ##
             ##            Make operational forecast             ##
@@ -385,10 +382,7 @@ for timedelta in range(6):
             fc_wk = fc_wk.expand_dims({'time': [modeldate]})
             
             # Calculate BMD tercile categories
-            try:
-                bdohc = xc.RankedTerciles()
-            except:
-                bdohc = xc.OneHotEncoder()
+            bdohc = xc.RankedTerciles()
             bdohc.fit(obs_wk)
             bd_ohc_wk = bdohc.transform(obs_wk)
                 
@@ -425,6 +419,16 @@ for timedelta in range(6):
                               deterministic_fc_smooth.longitude.values, 
                               output_dir, filename)
             
+            # Calculate percentile of score based on uncalibrated data
+            # The result will be the percentile where the ensemble mean forecast
+            # falls into the big ensemble of hindcast values
+            percentilescore = np.zeros((len(fc_wk.latitude),len(fc_wk.longitude)))
+            for xx in range(np.shape(percentilescore)[0]):
+                for yy in range(np.shape(percentilescore)[1]):
+                    hcs = hc_wk[:,:,xx,yy].values.flatten()
+                    hcs = hcs[~np.isnan(hcs)]
+                    percentilescore[xx,yy] = percentileofscore(hcs,np.mean(fc_wk[:,:,xx,yy].values))
+            
             # Load shapefile to integrate the gridded values to (divisions/districts/etc)
             shape_names, shapes = s2s.load_polygons(shp_file, name_col, name_col_higher, obs_wk.Lat.values, obs_wk.Lon.values, shape_mask_dir)
             
@@ -450,27 +454,78 @@ for timedelta in range(6):
                     key = var+wknr+'_'+district_name.lower()[:4]
                 else:
                     key = var+wknr+'_'+district_name.lower()[:5]
-                value = np.round(s2s.integrate_grid_to_polygon(np.array([input_grid]), 
-                                                               mask_2d, time_axis = 0, 
-                                                               method = method),
-                                 decimals=1)[0]
+                    
+                # Integrate forecast and rank values
+                fc_value = np.round(s2s.integrate_grid_to_polygon(np.array([input_grid]), 
+                                                                  mask_2d, time_axis = 0, 
+                                                                  method = method),
+                                    decimals=1)[0]
+                rank_value = np.round(s2s.integrate_grid_to_polygon(np.array([percentilescore]), 
+                                                                    mask_2d, time_axis = 0, 
+                                                                    method = method),
+                                    decimals=0)[0]
+                
+                # Integrate skill scores
+                skill_values = {}
+                for skill_value, skill_scores in (('pearson_value', pearson),
+                                                  ('ioa_value', ioa),
+                                                  ('groc_value', groc),
+                                                  ('rpss_value', rpss),
+                                                  ('bss_bn_value', bss[:,:,0]),
+                                                  ('bss_nn_value', bss[:,:,1]),
+                                                  ('bss_an_value', bss[:,:,2])):
+                    skill_values[skill_value] = np.round(s2s.integrate_grid_to_polygon(np.array([skill_scores.values]), 
+                                                                                       mask_2d, time_axis = 0, 
+                                                                                       method = method),
+                                             decimals=2)[0]
+                    
                 
                 # Set very low precipitation values at 0 mm
-                if var == 'tp' and value < 2:
-                    value = 0
+                if var == 'tp' and fc_value < 2:
+                    fc_value = 0
                 
                 # Store value in json and dataframe
-                fc_shp[key] = value
-                shape_data.at[district_name, var+'_'+period] = value
+                fc_shp[key] = fc_value
+                shape_data.at[district_name, var+'_'+period] = fc_value
+                
+                # Add value in the agro_results dictionary
+                if period == 'week1' or period == 'week2':
+                    res_add = pd.DataFrame([[district_name, var, period, 'fc_value', fc_value],
+                                            [district_name, var, period, 'rank_value', rank_value],
+                                            [district_name, var, period, 'pearson_value', skill_values['pearson_value']],
+                                            [district_name, var, period, 'ioa_value', skill_values['ioa_value']],
+                                            [district_name, var, period, 'groc_value', skill_values['groc_value']],
+                                            [district_name, var, period, 'rpss_value', skill_values['rpss_value']],
+                                            [district_name, var, period, 'bss_bn_value', skill_values['bss_bn_value']],
+                                            [district_name, var, period, 'bss_nn_value', skill_values['bss_nn_value']],
+                                            [district_name, var, period, 'bss_an_value', skill_values['bss_an_value']]], 
+                                           columns=res_cols)
+                    results = pd.concat([results, res_add], ignore_index=True)
+                elif period == 'week3+4':
+                    for week in ['week3','week4']:
+                        res_add = pd.DataFrame([[district_name, var, week, 'fc_value', fc_value],
+                                                [district_name, var, week, 'rank_value', rank_value],
+                                                [district_name, var, week, 'pearson_value', skill_values['pearson_value']],
+                                                [district_name, var, week, 'ioa_value', skill_values['ioa_value']],
+                                                [district_name, var, week, 'groc_value', skill_values['groc_value']],
+                                                [district_name, var, week, 'rpss_value', skill_values['rpss_value']],
+                                                [district_name, var, week, 'bss_bn_value', skill_values['bss_bn_value']],
+                                                [district_name, var, week, 'bss_nn_value', skill_values['bss_nn_value']],
+                                                [district_name, var, week, 'bss_an_value', skill_values['bss_an_value']]], 
+                                               columns=res_cols)
+                        results = pd.concat([results, res_add], ignore_index=True)
             
     # Save the data if there is data
     if models != 'No data':
         # Save the divisional output in a json file for the bulletin
         with open(output_dir+f'{shape_name}_forecast_{modeldatestr}.json', 'w') as jsfile:
-            json.dump(fc_shp, jsfile)
+            json.dump(fc_shp, jsfile) 
         
         # Save the divisional output in a csv format to be used on BAMIS
         shape_data.to_csv(output_dir+f'{shape_name}_forecast_{modeldatestr}.csv')
+        
+        # Save the results for the agro-advisories in a csv for WEnR
+        results.to_csv(output_dir+f's2s_forecast_for_agro_{modeldatestr}.csv')
         
         # Exit the script
         sys.exit()
