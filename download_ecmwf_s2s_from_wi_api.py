@@ -48,20 +48,24 @@ for timedelta in range(6):
         for res in resolutions:
             for fc_type in fc_types:
                 
-                # Create the download url
-                url_add = f"ecmwf_{fc_type}_{var}_{res}?datetime={modeldatestr_api}&format=netcdf"
-                url = base_url + url_add
-                
-                # Do the api request
-                r = requests.get(url, headers=header)
-                
-                # Check the status code. If the code is 200, the request is successful
-                # Save the data if request is successful
-                if r.status_code == 200:
-                
-                    # Write the response in a file
-                    output_fn = f'{output_dir}ecmwf_{fc_type}_{var}_{modeldatestr_out}_{res}.nc'
+                # Set the output filename
+                output_fn = f'{output_dir}ecmwf_{fc_type}_{var}_{modeldatestr_out}_{res}.nc'
+
+                # Only download if not already downloaded
+                if not os.path.exists(output_fn):
+
+                    # Create the download url
+                    url_add = f"ecmwf_{fc_type}_{var}_{res}?datetime={modeldatestr_api}&format=netcdf"
+                    url = base_url + url_add
                     
-                    file = open(output_fn, "wb")
-                    file.write(r.content)
-                    file.close()
+                    # Do the api request
+                    r = requests.get(url, headers=header)
+                    
+                    # Check the status code. If the code is 200, the request is successful
+                    # Save the data if request is successful
+                    if r.status_code == 200:
+                    
+                        # Write the response in a file
+                        file = open(output_fn, "wb")
+                        file.write(r.content)
+                        file.close()
