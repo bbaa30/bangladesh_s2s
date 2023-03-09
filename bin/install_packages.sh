@@ -8,4 +8,4 @@ conda config --add channels hallkjc01
 while read requirements; do conda install --yes $requirements; done < requirements.txt
 #
 # Move ecmwfapirc file
-mv ecmwfapirc.txt ~/.ecmwfapirc
+mv ecmwfapirc ~/.ecmwfapirc
