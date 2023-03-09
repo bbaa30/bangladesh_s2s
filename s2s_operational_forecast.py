@@ -125,7 +125,7 @@ shape_data[shape_name] = gpd_data.iloc[:,name_col].values
 shape_data = shape_data.set_index(shape_name)
 
 # Generate a pandas table for the district output for agriculture
-res_cols = ['district', 'indicator_variable','indicator_week','indicator_type','indicator_value']
+res_cols = ['district_id', 'indicator_variable','indicator_week','indicator_type','indicator_value']
 results = pd.DataFrame(columns=res_cols)
 
 # Make a dictionary for all models
@@ -301,8 +301,14 @@ for timedelta in range(6):
                 
                 # Combine the cross validated output to a single dataset
                 mlr_hcst = xr.concat(mlr_xval, 'time').mean('ND')
-                mc_hcst = xr.concat(mc_xval, 'time')
-                    
+                mc_hcst_non_calibrated = xr.concat(mc_xval, 'time')
+                
+                # The mc_xval contain values that are slightly below 0
+                # These values need to be set at 0
+                mc_hcst = xr.DataArray(data=mc_hcst_non_calibrated.values,
+                                       coords=mc_hcst_non_calibrated.coords)
+                mc_hcst.values[mc_hcst.values < 0] = 0.
+                
                 # Show skill of hindcasts
                 print('Calculate and plot skill scores of hindcast')
         
@@ -430,18 +436,19 @@ for timedelta in range(6):
                     percentilescore[xx,yy] = percentileofscore(hcs,np.mean(fc_wk[:,:,xx,yy].values))
             
             # Load shapefile to integrate the gridded values to (divisions/districts/etc)
-            shape_names, shapes = s2s.load_polygons(shp_file, name_col, name_col_higher, obs_wk.Lat.values, obs_wk.Lon.values, shape_mask_dir)
+            shape_names, shapes, shape_ids = s2s.load_polygons(shp_file, name_col, name_col_higher, obs_wk.Lat.values, obs_wk.Lon.values, shape_mask_dir)
             
             print('Integrate the grid variables to polygons.')
             
             # Loop over all the shape names
-            shapedirlist = os.listdir(shape_mask_dir)
-            for (maskfile, ss) in zip(shapedirlist, range(len(shapedirlist))):
+            district_list = {}
+            for (district_name, district_id) in zip(shape_names, shape_ids):
                 
                 # Load the shape mask
-                district_name = maskfile[11:-4]
+                district_list[district_id] = district_name
+                maskfile = 'shape_mask_' + district_name + '.npy'
                 mask_2d = np.load(shape_mask_dir + maskfile, allow_pickle=True)
-                
+
                 # Set the data and the integration method (now average is chosen)
                 input_grid = deterministic_fc_smooth.values
                 input_grid[np.isnan(input_grid)] = 0.
@@ -474,11 +481,14 @@ for timedelta in range(6):
                                                   ('bss_bn_value', bss[:,:,0]),
                                                   ('bss_nn_value', bss[:,:,1]),
                                                   ('bss_an_value', bss[:,:,2])):
+                    
+                    # Set NaN-values to 0 for interpolation
+                    skill_scores.values[np.isnan(skill_scores.values)] = 0
                     skill_values[skill_value] = np.round(s2s.integrate_grid_to_polygon(np.array([skill_scores.values]), 
                                                                                        mask_2d, time_axis = 0, 
                                                                                        method = method),
                                              decimals=2)[0]
-                    
+
                 
                 # Set very low precipitation values at 0 mm
                 if var == 'tp' and fc_value < 2:
@@ -490,28 +500,29 @@ for timedelta in range(6):
                 
                 # Add value in the agro_results dictionary
                 if period == 'week1' or period == 'week2':
-                    res_add = pd.DataFrame([[district_name, var, period, 'fc_value', fc_value],
-                                            [district_name, var, period, 'rank_value', rank_value],
-                                            [district_name, var, period, 'pearson_value', skill_values['pearson_value']],
-                                            [district_name, var, period, 'ioa_value', skill_values['ioa_value']],
-                                            [district_name, var, period, 'groc_value', skill_values['groc_value']],
-                                            [district_name, var, period, 'rpss_value', skill_values['rpss_value']],
-                                            [district_name, var, period, 'bss_bn_value', skill_values['bss_bn_value']],
-                                            [district_name, var, period, 'bss_nn_value', skill_values['bss_nn_value']],
-                                            [district_name, var, period, 'bss_an_value', skill_values['bss_an_value']]], 
+                    week = int(period[4:5])
+                    res_add = pd.DataFrame([[district_id, var, week, 'fc_value', fc_value],
+                                            [district_id, var, week, 'rank_value', rank_value],
+                                            [district_id, var, week, 'pearson_value', skill_values['pearson_value']],
+                                            [district_id, var, week, 'ioa_value', skill_values['ioa_value']],
+                                            [district_id, var, week, 'groc_value', skill_values['groc_value']],
+                                            [district_id, var, week, 'rpss_value', skill_values['rpss_value']],
+                                            [district_id, var, week, 'bss_bn_value', skill_values['bss_bn_value']],
+                                            [district_id, var, week, 'bss_nn_value', skill_values['bss_nn_value']],
+                                            [district_id, var, week, 'bss_an_value', skill_values['bss_an_value']]], 
                                            columns=res_cols)
                     results = pd.concat([results, res_add], ignore_index=True)
                 elif period == 'week3+4':
-                    for week in ['week3','week4']:
-                        res_add = pd.DataFrame([[district_name, var, week, 'fc_value', fc_value],
-                                                [district_name, var, week, 'rank_value', rank_value],
-                                                [district_name, var, week, 'pearson_value', skill_values['pearson_value']],
-                                                [district_name, var, week, 'ioa_value', skill_values['ioa_value']],
-                                                [district_name, var, week, 'groc_value', skill_values['groc_value']],
-                                                [district_name, var, week, 'rpss_value', skill_values['rpss_value']],
-                                                [district_name, var, week, 'bss_bn_value', skill_values['bss_bn_value']],
-                                                [district_name, var, week, 'bss_nn_value', skill_values['bss_nn_value']],
-                                                [district_name, var, week, 'bss_an_value', skill_values['bss_an_value']]], 
+                    for week in [3,4]:
+                        res_add = pd.DataFrame([[district_id, var, week, 'fc_value', fc_value],
+                                                [district_id, var, week, 'rank_value', rank_value],
+                                                [district_id, var, week, 'pearson_value', skill_values['pearson_value']],
+                                                [district_id, var, week, 'ioa_value', skill_values['ioa_value']],
+                                                [district_id, var, week, 'groc_value', skill_values['groc_value']],
+                                                [district_id, var, week, 'rpss_value', skill_values['rpss_value']],
+                                                [district_id, var, week, 'bss_bn_value', skill_values['bss_bn_value']],
+                                                [district_id, var, week, 'bss_nn_value', skill_values['bss_nn_value']],
+                                                [district_id, var, week, 'bss_an_value', skill_values['bss_an_value']]], 
                                                columns=res_cols)
                         results = pd.concat([results, res_add], ignore_index=True)
             
@@ -525,7 +536,29 @@ for timedelta in range(6):
         shape_data.to_csv(output_dir+f'{shape_name}_forecast_{modeldatestr}.csv')
         
         # Save the results for the agro-advisories in a csv for WEnR
-        results.to_csv(output_dir+f's2s_forecast_for_agro_{modeldatestr}.csv')
+        # results.to_csv(output_dir+f's2s_forecast_for_agro_{modeldatestr}.csv', index=False)
+        res_js = results.to_dict(orient='records')
+        agro_js = {
+             "metadata": {"description": "S2S forecast for Bangladesh based on a multi model ensemble.",
+                          "model_combination": models,
+                          "modeldate": str(modeldate),
+                          "forecast_start": str(today),
+                          "district_list": district_list,
+                          "indicator_description": {"fc_value": "Deterministic forecast values",
+                                                   "rank_value": "The ensemble average value expressed as percentile of the model climatology",
+                                                   "pearson_value": "The pearson correlation coefficient based on hindcasts",
+                                                   "ioa_value": "The index of agreement based on hindcasts",
+                                                   "groc_value": "The generalized ROC based on hindcasts",
+                                                   "rpss_value": "The Rank Probability Skill Score based on hindcats",
+                                                   "bss_bn_value": "Brier Skill Score for the Below Normal category based on hindcasts",
+                                                   "bss_nn_value": "Brier Skill Score for the Near Normal category based on hindcasts",
+                                                   "bss_an_value": "Brier Skill Score for the Above Normal category based on hindcasts"}
+                          },
+             "weather_variables": res_js
+            }
+        
+        with open(output_dir+f's2s_forecast_for_agro_{modeldatestr}.json', 'w') as jsfile:
+            json.dump(agro_js, jsfile)
         
         # Exit the script
         sys.exit()
