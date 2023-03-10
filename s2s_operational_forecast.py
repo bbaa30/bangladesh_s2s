@@ -266,7 +266,12 @@ for timedelta in range(6):
                 fc_wk = fc_wk.expand_dims({'time': [modeldate]})
                 
                 # Calculate BMD tercile categories
-                bdohc = xc.RankedTerciles()
+                try:
+                    # The old version of Xcast
+                    bdohc = xc.RankedTerciles()
+                except:
+                    # The new version of Xcast
+                    bdohc = xc.OneHotEncoder()
                 bdohc.fit(obs_wk)
                 bd_ohc_wk = bdohc.transform(obs_wk)
         
@@ -282,7 +287,12 @@ for timedelta in range(6):
                 # Do a cross validation of the hindcast models
                 for x_train, y_train, x_test, y_test in xc.CrossValidator(hc_wk, obs_wk, window=window, x_feature_dim='member'):
                     
-                    ohc_train = xc.RankedTerciles()
+                    try:
+                        # The old version of Xcast
+                        ohc_train = xc.RankedTerciles()
+                    except:
+                        # The new version of Xcast
+                        ohc_train = xc.OneHotEncoder()
                     ohc_train.fit(y_train)
                     ohc_y_train = ohc_train.transform(y_train)
                     
@@ -388,7 +398,13 @@ for timedelta in range(6):
             fc_wk = fc_wk.expand_dims({'time': [modeldate]})
             
             # Calculate BMD tercile categories
-            bdohc = xc.RankedTerciles()
+            try:
+                # The old version of XCast
+                bdohc = xc.RankedTerciles()
+            except:
+                # The new version of Xcast
+                bdohc = xc.OneHotEncoder()
+                
             bdohc.fit(obs_wk)
             bd_ohc_wk = bdohc.transform(obs_wk)
                 
