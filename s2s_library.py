@@ -345,6 +345,7 @@ def plot_skill_score(value, obs, levels, cmap, extend, title, fig_dir, filename)
         The figure is stored under filename in fig_dir
     '''
 
+
     plt.figure(figsize=(10,8.5))
 
     # Set the axes using the specified map projection
@@ -354,7 +355,9 @@ def plot_skill_score(value, obs, levels, cmap, extend, title, fig_dir, filename)
     # Make a filled contour plot
     cs=ax.contourf(obs['Lon'], obs['Lat'], value,
                    transform = ccrs.PlateCarree(),levels = levels, cmap=cmap, extend=extend)
-    plt.colorbar(cs)
+  
+    cbar = plt.colorbar(cs, ax=ax)
+    cbar.ax.tick_params(labelsize=18)
     
     # Add coastlines
     ax.coastlines()
@@ -370,7 +373,7 @@ def plot_skill_score(value, obs, levels, cmap, extend, title, fig_dir, filename)
     lat_formatter = cticker.LatitudeFormatter()
     ax.yaxis.set_major_formatter(lat_formatter)
 
-    plt.title(title)
+    plt.title(title, fontsize=25)
     plt.tight_layout()
     plt.savefig(fig_dir + filename)
 
@@ -396,52 +399,61 @@ def plot_forecast(var, period, deterministic_fc_smooth, deterministic_anomaly,
     
     # Set the metadata for the figures
     if var == 'tmin':
-        cmap_det = 'gist_ncar'
+        cmap_det = plt.cm.gist_ncar
         cmap_anom = 'RdBu_r'
         cmap_below = 'Blues'
         cmap_above = 'YlOrRd'
-        norm_det = mpl.colors.Normalize(vmin=0, vmax=55)
-        levels_det = np.linspace(5,30,26)
-        ticks_det = np.linspace(5,30,6)
-        levels_anom = np.linspace(-6,6,25)
-        ticks_anom = np.linspace(-6,6,5)
+        norm_det = mpl.colors.Normalize(vmin=10, vmax=35)
+        cmap_det.set_over(plt.cm.gist_ncar(norm_det(38)))
+        cmap_det.set_under(plt.cm.gist_ncar(norm_det(13)))
+        levels_det = np.linspace(15,30,16)
+        ticks_det = np.linspace(15,30,7)
+        levels_anom = np.linspace(-5,5,21)
+        ticks_anom = np.linspace(-5,5,5)
         label_det = u'Minimum temperature (\N{DEGREE SIGN}C)'
         label_anom = u'Temperature anomaly (\N{DEGREE SIGN}C)'
     elif var == 'tmax':
-        cmap_det = 'gist_ncar'
+        cmap_det = plt.cm.gist_ncar
         cmap_anom = 'RdBu_r'
         cmap_below = 'Blues'
         cmap_above = 'YlOrRd'
-        norm_det = mpl.colors.Normalize(vmin=0, vmax=55)
-        levels_det = np.linspace(15,45,31)
-        ticks_det = np.linspace(15,45,7)
-        levels_anom = np.linspace(-6,6,25)
-        ticks_anom = np.linspace(-6,6,5)
+        norm_det = mpl.colors.Normalize(vmin=20, vmax=55)
+        cmap_det.set_over(plt.cm.gist_ncar(norm_det(47)))
+        cmap_det.set_under(plt.cm.gist_ncar(norm_det(28)))
+        levels_det = np.linspace(30,45,21)
+        ticks_det = np.linspace(30,45,7)
+        levels_anom = np.linspace(-5,5,21)
+        ticks_anom = np.linspace(-5,5,5)
         label_det = u'Maximum temperature (\N{DEGREE SIGN}C)'
         label_anom = u'Temperature anomaly (\N{DEGREE SIGN}C)'
     elif var == 'tp':
         # Set negative values to 0
-        deterministic_fc_smooth.values[deterministic_fc_smooth.values <= 0.] = 0.
+        deterministic_fc_smooth.values[deterministic_fc_smooth.values <= 0.5] = 0.
         
         # Make the maximum of precipitation dyanmic
         max_tp = np.nanmax(deterministic_fc_smooth)
+        max_anom = max(abs(np.nanmax(deterministic_anomaly)),abs(np.nanmin(deterministic_anomaly)))
         
         # Ceil value up to next 10
         max_tp = math.ceil(max_tp/10)*10
+        max_anom = math.ceil(max_tp/10)*10
         
         if max_tp < 30:
             # Set the maximum at 30 mm if the maximum is lower
             max_tp = 30.
         
-        norm_det = mpl.colors.Normalize(vmin=0, vmax=max_tp)
+        if max_anom < 10:
+            max_anom = 10.
+        
+        norm_det = mpl.colors.Normalize(vmin=0.5, vmax=max_tp)
         cmap_det = cmocean.cm.haline_r
         cmap_anom = 'BrBG'
         cmap_below = 'YlOrRd'
         cmap_above = 'Greens'
         levels_det = np.linspace(0,max_tp,17)
         ticks_det = np.linspace(0,max_tp,5)
-        levels_anom = np.linspace(-50,50,21)
-        ticks_anom = np.linspace(-50,50,5)
+        levels_anom = np.linspace(-max_anom,max_anom,21)
+        ticks_anom = np.linspace(-max_anom,max_anom,5)
         label_det = 'Precipitation (mm)'
         label_anom = 'Precipitation amomaly (mm)'
 
@@ -728,11 +740,15 @@ def load_polygons(shpfile, name_column, name_column_higher_level,
     # Load the names of the polygons
     polygon_names = []
     polygon_shapes = []
+    polygon_ids = []
     for i_t in range(shpfile.numRecords):
         polygon_name = shpfile.record(i_t)[name_column].title()
         polygon_names.append(polygon_name.replace('/','-'))
         polygon_shape = shpfile.shapeRecords()[i_t].shape
         polygon_shapes.append(polygon_shape)
+        
+        polygon_ids.append(i_t+1) # To start at 1
+        polygon_ids.append(i_t)
 
     if not len(polygon_names) == len(set(polygon_names)):
         # If there are duplicates in the township names, add the name of the 
@@ -780,7 +796,7 @@ def load_polygons(shpfile, name_column, name_column_higher_level,
         if '/' in polygon_names[ts]:
             polygon_names[ts] = polygon_names[ts].replace('/','-')    
     
-    return polygon_names, polygon_shapes
+    return polygon_names, polygon_shapes, polygon_ids
 
 
     

@@ -117,6 +117,9 @@ shape_name = shape_info[shp_level]['name_shapes']
 name_col = shape_info[shp_level]['name_column']
 name_col_higher = shape_info[shp_level]['name_column_higher']
 
+# Load district ID and name mapping
+district_mapping = pd.read_csv(direc + 'gadm41_BGD_shp/bd_district_codes.csv')
+
 # Generate a pandas table for the divisional values
 shape_data = pd.DataFrame(index=range(len(gpd_data)), columns=[shape_name, 'tmax_week1', 'tmin_week1', 'tp_week1',
                                                                'tmax_week2', 'tmin_week2', 'tp_week2', 
@@ -216,6 +219,7 @@ for timedelta in range(6):
             cfsv2_hc_daily = None
             
         # Combine models
+        print("Combining the models")
         obs_mm, fc_daily_mm, hc_daily_mm, models = s2s.combine_models(ecmwf_available, eccc_available, ncep_available,
                                                                       obs_ecm, obs_ecc, obs_cfsv2,
                                                                       ecm_fc_daily, ecc_fc_daily, cfsv2_fc_daily,
@@ -230,6 +234,9 @@ for timedelta in range(6):
             model_info['multi_model'] = {'forecast': fc_daily_mm,
                                          'hindcast': hc_daily_mm,
                                          'observations': obs_mm}
+        else:
+            print('No multi-model: continue')
+            continue
     
         # Set mask to mask all data points outside of Bangladesh
         # Use the Tmax observations to load this mask
@@ -274,9 +281,7 @@ for timedelta in range(6):
                     bdohc = xc.OneHotEncoder()
                 bdohc.fit(obs_wk)
                 bd_ohc_wk = bdohc.transform(obs_wk)
-        
-
-            
+                    
                 print('Start with cross validation on hindcasts of '+hc_model)
                 window = 3
                    
@@ -284,6 +289,7 @@ for timedelta in range(6):
                 mc_xval = []
                 
                 i_test=0
+                
                 # Do a cross validation of the hindcast models
                 for x_train, y_train, x_test, y_test in xc.CrossValidator(hc_wk, obs_wk, window=window, x_feature_dim='member'):
                     
@@ -296,9 +302,9 @@ for timedelta in range(6):
                     ohc_train.fit(y_train)
                     ohc_y_train = ohc_train.transform(y_train)
                     
-                    mlr = xc.rMultipleLinearRegression()
-                    mlr.fit(x_train, y_train, rechunk=False, x_feature_dim='member')
-                    mlr_preds = mlr.predict(x_test.rename({'member': 'M'}), rechunk=False, x_feature_dim='M')
+                    mlr = xc.BiasCorrectedEnsembleMean()
+                    mlr.fit(x_train, y_train, x_feature_dim='member')
+                    mlr_preds = mlr.predict(x_test.rename({'member': 'M'}), x_feature_dim='M')
                     mlr_xval.append(mlr_preds.isel(time=window // 2))
             
                     mc = xc.cMemberCount()
@@ -326,25 +332,25 @@ for timedelta in range(6):
                 pearson = np.squeeze( xc.Pearson(mlr_hcst, obs_wk, x_feature_dim='M'), axis=[2,3])
                 levels_pearson = np.linspace(-1,1,21)
                 s2s.plot_skill_score(pearson, obs, levels_pearson, 'RdBu', 'both', 
-                                      f'Pearson correlation for {var} {period}',
+                                      f'{hc_model}'.upper(),
                                       fig_dir_hc,
                                       f'hc_{var}_pearson_{period}_{modeldatestr}_{hc_model}.png')
                 
-                # Calculate and plot Index of AGreement
+                # Calculate and plot Index of Agreement
                 ioa = np.squeeze( xc.IndexOfAgreement(mlr_hcst, obs_wk, x_feature_dim='M'), axis=[2,3])
                 levels_ioa = np.linspace(0,1,11)
                 s2s.plot_skill_score(ioa, obs, levels_ioa, 'Blues', 'both',
-                                      f'IndexOfAgreement for {var} {period}',
+                                      f'{hc_model}'.upper(),
                                       fig_dir_hc,
                                       f'hc_{var}_ioa_{period}_{modeldatestr}_{hc_model}.png')        
                 
                 # Calculate and plot Generalized ROC
-                groc = np.squeeze(xc.GeneralizedROC( mc_hcst, bd_ohc_wk, x_feature_dim='member'), axis = [2,3])
+                groc = np.squeeze(xc.GeneralizedROC(mc_hcst, bd_ohc_wk, x_feature_dim='member'), axis = [2,3])
                 levels_groc = np.linspace(0.5,1,11)
                 cmapg = plt.get_cmap('autumn_r').copy()
                 cmapg.set_under('lightgray')
                 s2s.plot_skill_score(groc, obs, levels_groc, cmapg, 'min',
-                                      f'Generalized ROC for {var} {period}',
+                                      f'{hc_model}'.upper(),
                                       fig_dir_hc,
                                       f'hc_{var}_groc_{period}_{modeldatestr}_{hc_model}.png')  
                 
@@ -360,7 +366,7 @@ for timedelta in range(6):
                 
                 levels_rpss = np.linspace(0.,0.2,11)
                 s2s.plot_skill_score(rpss, obs, levels_rpss, cmapg, 'both',
-                                      f'RPSS for {var} {period}',
+                                      f'{hc_model}'.upper(),
                                       fig_dir_hc,
                                       f'hc_{var}_rpss_{period}_{modeldatestr}_{hc_model}.png') 
                 
@@ -377,7 +383,7 @@ for timedelta in range(6):
                     data_plot = bss[:,:,idx]
                     
                     s2s.plot_skill_score(data_plot, obs, levels_bss, cmapg, 'min',
-                                          f'{cat} brier skill score for {var} {period}',
+                                          f'{hc_model}'.upper(),
                                           fig_dir_hc,
                                           f'hc_{var}_bss_{cat}_{period}_{modeldatestr}_{hc_model}.png'.lower()) 
                 
@@ -409,15 +415,16 @@ for timedelta in range(6):
             bd_ohc_wk = bdohc.transform(obs_wk)
                 
             print('Generate operational forecast')
-            # Use Multiple Linear Regression for deterministic foreast
-            mlrfc = xc.rMultipleLinearRegression()
-            mlrfc.fit(hc_wk.mean('member').expand_dims({'M':[0]}), obs_wk, rechunk=False, x_feature_dim='M')
-            deterministic_forecast = mlrfc.predict(fc_wk.mean('member').expand_dims({'M':[0]}), rechunk=False, x_feature_dim='M').mean('ND')
+            # Use Bias Corrected Ensemble Mean for deterministic foreast
+            mlrfc = xc.BiasCorrectedEnsembleMean()
+            mlrfc.fit(hc_wk.mean('member').expand_dims({'M':[0]}), obs_wk, x_feature_dim='M')
+            deterministic_forecast = mlrfc.predict(fc_wk.mean('member').expand_dims({'M':[0]}), x_feature_dim='M').mean('ND')
             
-            # Use Member Count for probabilistic forecast        
+            # Use Member Count/ELR for probabilistic forecast
             mc = xc.cMemberCount()
             mc.fit(hc_wk.rename({'member':'M'}), obs_wk, x_feature_dim='M')
-            probabilistic_forecast = mc.predict(fc_wk, x_feature_dim='member')        
+            probabilistic_forecast = mc.predict(fc_wk, x_feature_dim='member', x_sample_dim = 'time')       
+           
             
             # Calculate the smoothed deterministic forecast
             deterministic_fc_smooth = xc.gaussian_smooth(deterministic_forecast, x_sample_dim='time', x_feature_dim='M',  kernel=3)
@@ -426,7 +433,8 @@ for timedelta in range(6):
             deterministic_anomaly = deterministic_fc_smooth - obs_wk.mean('time').mean('M').rename({'Lat': 'latitude', 'Lon': 'longitude'})
             
             # Calculate the smoothed probabilistic forecast
-            probabilistic_fc_smooth = xc.gaussian_smooth(probabilistic_forecast, x_sample_dim='time', x_feature_dim='member',  kernel=3)
+            # probabilistic_forecast = probabilistic_forecast.squeeze("ND")
+            probabilistic_fc_smooth = xc.gaussian_smooth(probabilistic_forecast, x_sample_dim='time', x_feature_dim= 'member',  kernel=3)
             probabilistic_fc_smooth.values[:,:,mask] = np.nan
             
             # Plot the forecast
@@ -434,12 +442,12 @@ for timedelta in range(6):
                               deterministic_anomaly, probabilistic_fc_smooth,
                               fig_dir_fc, modeldatestr)
             
-            # Save forecast as geotiff
-            filename = f'det_fc_{var}_{period}_{modeldatestr}.tiff'
-            s2s.save_forecast(var, varunit, deterministic_fc_smooth.data, 
-                              deterministic_fc_smooth.latitude.values, 
-                              deterministic_fc_smooth.longitude.values, 
-                              output_dir, filename)
+            # # Save forecast as geotiff
+            # filename = f'det_fc_{var}_{period}_{modeldatestr}.tiff'
+            # s2s.save_forecast(var, varunit, deterministic_fc_smooth.data, 
+            #                   deterministic_fc_smooth.latitude.values, 
+            #                   deterministic_fc_smooth.longitude.values, 
+            #                   output_dir, filename)
             
             # Calculate percentile of score based on uncalibrated data
             # The result will be the percentile where the ensemble mean forecast
@@ -458,35 +466,81 @@ for timedelta in range(6):
             
             # Loop over all the shape names
             district_list = {}
-            for (district_name, district_id) in zip(shape_names, shape_ids):
+            for (district_name, shape_id) in zip(shape_names, shape_ids):
                 
                 # Load the shape mask
-                district_list[district_id] = district_name
                 maskfile = 'shape_mask_' + district_name + '.npy'
                 mask_2d = np.load(shape_mask_dir + maskfile, allow_pickle=True)
+                
+                district_id = int(district_mapping[district_mapping['Name_GADM41'] == district_name]['District_no'].values[0])
+                district_name_official = district_mapping[district_mapping['Name_GADM41'] == district_name]['Name_official'].values[0]
 
+                district_list[str(district_id)] = district_name_official
+                
                 # Set the data and the integration method (now average is chosen)
                 input_grid = deterministic_fc_smooth.values
+                input_ano = deterministic_anomaly.values
+                input_bn = 100*probabilistic_fc_smooth[0,0].values
+                input_nn = 100*probabilistic_fc_smooth[1,0].values
+                input_an = 100*probabilistic_fc_smooth[2,0].values  
                 input_grid[np.isnan(input_grid)] = 0.
+                input_ano[np.isnan(input_ano)] = 0.
+                input_bn[np.isnan(input_bn)] = 0.
+                input_nn[np.isnan(input_nn)] = 0.
+                input_an[np.isnan(input_an)] = 0.
                 method = 'average'
                 
                 # Integrate the gridded value to a single value for this polygon
                 if "cox" in district_name.lower():
                     key = var+wknr+'_'+district_name.lower()[:3]
+                    key_ano = 'an'+var+wknr+'_'+district_name.lower()[:3]
+                    key_bn = 'bn_'+var+wknr+'_'+district_name.lower()[:3]
+                    key_nn = 'nn_'+var+wknr+'_'+district_name.lower()[:3]
+                    key_an = 'an_'+var+wknr+'_'+district_name.lower()[:3]
                 elif "feni" in district_name.lower():
                     key = var+wknr+'_'+district_name.lower()[:4]
+                    key_ano = 'an'+var+wknr+'_'+district_name.lower()[:4]
+                    key_bn = 'bn_'+var+wknr+'_'+district_name.lower()[:4]
+                    key_nn = 'nn_'+var+wknr+'_'+district_name.lower()[:4]
+                    key_an = 'an_'+var+wknr+'_'+district_name.lower()[:4]                    
                 else:
                     key = var+wknr+'_'+district_name.lower()[:5]
+                    key_ano = 'an'+var+wknr+'_'+district_name.lower()[:5] 
+                    key_bn = 'bn_'+var+wknr+'_'+district_name.lower()[:5]
+                    key_nn = 'nn_'+var+wknr+'_'+district_name.lower()[:5]
+                    key_an = 'an_'+var+wknr+'_'+district_name.lower()[:5] 
                     
+                                  
                 # Integrate forecast and rank values
-                fc_value = np.round(s2s.integrate_grid_to_polygon(np.array([input_grid]), 
+                fc_value = int(np.round(s2s.integrate_grid_to_polygon(np.array([input_grid]), 
                                                                   mask_2d, time_axis = 0, 
                                                                   method = method),
-                                    decimals=1)[0]
-                rank_value = np.round(s2s.integrate_grid_to_polygon(np.array([percentilescore]), 
+                                    decimals=0)[0])
+                
+                ano_value = int(np.round(s2s.integrate_grid_to_polygon(np.array([input_ano]), 
+                                                                  mask_2d, time_axis = 0, 
+                                                                  method = method), 
+                                    decimals=0)[0])
+
+                bn_value = int(np.round(s2s.integrate_grid_to_polygon(np.array([input_bn]), 
+                                                                  mask_2d, time_axis = 0, 
+                                                                  method = method),
+                                    decimals=0)[0])                
+ 
+                nn_value = int(np.round(s2s.integrate_grid_to_polygon(np.array([input_nn]), 
+                                                                  mask_2d, time_axis = 0, 
+                                                                  method = method),
+                                    decimals=0)[0]) 
+
+                an_value = int(np.round(s2s.integrate_grid_to_polygon(np.array([input_an]), 
+                                                                  mask_2d, time_axis = 0, 
+                                                                  method = method),
+                                    decimals=0)[0])      
+                
+                rank_value = int(np.round(s2s.integrate_grid_to_polygon(np.array([percentilescore]), 
                                                                     mask_2d, time_axis = 0, 
                                                                     method = method),
-                                    decimals=0)[0]
+                                    decimals=0)[0])
                 
                 # Integrate skill scores
                 skill_values = {}
@@ -501,9 +555,9 @@ for timedelta in range(6):
                     # Set NaN-values to 0 for interpolation
                     skill_scores.values[np.isnan(skill_scores.values)] = 0
                     skill_values[skill_value] = np.round(s2s.integrate_grid_to_polygon(np.array([skill_scores.values]), 
-                                                                                       mask_2d, time_axis = 0, 
-                                                                                       method = method),
-                                             decimals=2)[0]
+                                                                                        mask_2d, time_axis = 0, 
+                                                                                        method = method),
+                                              decimals=2)[0]
 
                 
                 # Set very low precipitation values at 0 mm
@@ -514,23 +568,42 @@ for timedelta in range(6):
                 fc_shp[key] = fc_value
                 shape_data.at[district_name, var+'_'+period] = fc_value
                 
+                fc_shp[key_ano] = ano_value
+                shape_data.at[district_name, 'an'+var+'_'+period] = ano_value
+                
+                fc_shp[key_bn] = bn_value
+                shape_data.at[district_name, 'bn_'+var+'_'+period] = bn_value
+                
+                fc_shp[key_nn] = nn_value
+                shape_data.at[district_name, 'nn_'+var+'_'+period] = bn_value
+                
+                fc_shp[key_an] = an_value
+                shape_data.at[district_name, 'an_'+var+'_'+period] = an_value
+                
                 # Add value in the agro_results dictionary
                 if period == 'week1' or period == 'week2':
-                    week = int(period[4:5])
-                    res_add = pd.DataFrame([[district_id, var, week, 'fc_value', fc_value],
-                                            [district_id, var, week, 'rank_value', rank_value],
-                                            [district_id, var, week, 'pearson_value', skill_values['pearson_value']],
-                                            [district_id, var, week, 'ioa_value', skill_values['ioa_value']],
-                                            [district_id, var, week, 'groc_value', skill_values['groc_value']],
-                                            [district_id, var, week, 'rpss_value', skill_values['rpss_value']],
-                                            [district_id, var, week, 'bss_bn_value', skill_values['bss_bn_value']],
-                                            [district_id, var, week, 'bss_nn_value', skill_values['bss_nn_value']],
-                                            [district_id, var, week, 'bss_an_value', skill_values['bss_an_value']]], 
-                                           columns=res_cols)
+                    res_add = pd.DataFrame([[district_id, var, period, 'fc_value', fc_value],
+                                            [district_id, var, period, 'ano_value', ano_value],
+                                            [district_id, var, period, 'bn_value', bn_value],
+                                            [district_id, var, period, 'nn_value', nn_value],
+                                            [district_id, var, period, 'an_value', an_value],
+                                            [district_id, var, period, 'rank_value', rank_value],
+                                            [district_id, var, period, 'pearson_value', skill_values['pearson_value']],
+                                            [district_id, var, period, 'ioa_value', skill_values['ioa_value']],
+                                            [district_id, var, period, 'groc_value', skill_values['groc_value']],
+                                            [district_id, var, period, 'rpss_value', skill_values['rpss_value']],
+                                            [district_id, var, period, 'bss_bn_value', skill_values['bss_bn_value']],
+                                            [district_id, var, period, 'bss_nn_value', skill_values['bss_nn_value']],
+                                            [district_id, var, period, 'bss_an_value', skill_values['bss_an_value']]], 
+                                            columns=res_cols)
                     results = pd.concat([results, res_add], ignore_index=True)
                 elif period == 'week3+4':
-                    for week in [3,4]:
+                    for week in ['week3','week4']:
                         res_add = pd.DataFrame([[district_id, var, week, 'fc_value', fc_value],
+                                                [district_id, var, week, 'ano_value', ano_value],
+                                                [district_id, var, week, 'bn_value', bn_value],
+                                                [district_id, var, week, 'nn_value', nn_value],
+                                                [district_id, var, week, 'an_value', an_value],                                                
                                                 [district_id, var, week, 'rank_value', rank_value],
                                                 [district_id, var, week, 'pearson_value', skill_values['pearson_value']],
                                                 [district_id, var, week, 'ioa_value', skill_values['ioa_value']],
@@ -539,14 +612,14 @@ for timedelta in range(6):
                                                 [district_id, var, week, 'bss_bn_value', skill_values['bss_bn_value']],
                                                 [district_id, var, week, 'bss_nn_value', skill_values['bss_nn_value']],
                                                 [district_id, var, week, 'bss_an_value', skill_values['bss_an_value']]], 
-                                               columns=res_cols)
+                                                columns=res_cols)
                         results = pd.concat([results, res_add], ignore_index=True)
             
     # Save the data if there is data
-    if models != 'No data':
+    if len(model_info) > 1:
         # Save the divisional output in a json file for the bulletin
         with open(output_dir+f'{shape_name}_forecast_{modeldatestr}.json', 'w') as jsfile:
-            json.dump(fc_shp, jsfile) 
+            json.dump(fc_shp, jsfile)
         
         # Save the divisional output in a csv format to be used on BAMIS
         shape_data.to_csv(output_dir+f'{shape_name}_forecast_{modeldatestr}.csv')
@@ -572,7 +645,14 @@ for timedelta in range(6):
                           },
              "weather_variables": res_js
             }
-        
+        for key, value in agro_js.items():
+            if type(value) is int:
+                continue
+            elif isinstance(value, int):
+                agro_js[key] = value
+            elif isinstance(value, np.int64):
+                agro_js[key] = int(value)
+                
         with open(output_dir+f's2s_forecast_for_agro_{modeldatestr}.json', 'w') as jsfile:
             json.dump(agro_js, jsfile)
         
