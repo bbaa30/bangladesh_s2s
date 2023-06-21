@@ -21,7 +21,7 @@ from configparser import ConfigParser
 
 # Read the basic paths from the config file
 config = ConfigParser()
-config.read('config_bd_s2s.ini')
+config.read('/srv/config/config_bd_s2s.ini')
 
 # Set the directories from the config file
 direc = config['paths']['s2s_dir'] 
@@ -70,7 +70,7 @@ for timedelta in range(1,6):
     # Set the modeldate
     modeldate = today - datetime.timedelta(timedelta)
     modeldatestr = modeldate.strftime("%Y%m%d")
-        
+    
     try:
         
         # Load the hindcast dataset
@@ -119,6 +119,12 @@ for timedelta in range(1,6):
             hc_old = hc_old_all[varname_hc]
             hc_new = hc_new_all[varname_hc]
             
+            if varname_hc == 'tp':
+                hc_old.data[1:] = (hc_old.data[1:] - hc_old.data[:-1])
+                hc_old.data[hc_old.data < 0] = 0.
+                hc_new.data[1:] = (hc_new.data[1:] - hc_new.data[:-1])
+                hc_new.data[hc_new.data < 0] = 0.
+                
             # Use a trick to match the number of ensemble members
             hc_old = xr.concat([hc_old.assign_coords(number=hc_old.number+ii*3) for ii in range(5)], dim='number')
                     

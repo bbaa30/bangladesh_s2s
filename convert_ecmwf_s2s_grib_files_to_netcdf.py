@@ -18,7 +18,7 @@ from configparser import ConfigParser
 
 # Read the basic paths from the config file
 config = ConfigParser()
-config.read('config_bd_s2s.ini')
+config.read('/srv/config/config_bd_s2s.ini')
 
 # Set the directories from the config file
 input_dir = config['paths']['ecmwf_grib']
@@ -181,6 +181,12 @@ for fc_type in ['fc', 'hc']:
                         dates_ind = dates.argsort()
                         forecast = forecast[dates_ind]
                         dates = dates[dates_ind]
+                        
+                    if var_key == 'tp':
+                        fc_accum = forecast.copy()
+                        forecast = np.zeros(np.shape(forecast))
+                        forecast[1:] = fc_accum[1:] - fc_accum[:-1]
+                        forecast[forecast<0]=0.
 
                     # Convert units
                     if unit == 'K':
@@ -205,6 +211,12 @@ for fc_type in ['fc', 'hc']:
             dates_ind = dates.argsort()
             forecast = forecast[dates_ind]
             dates = dates[dates_ind]
+            
+        if var_key == 'tp':
+            fc_accum = forecast.copy()
+            forecast = np.zeros(np.shape(forecast))
+            forecast[1:] = fc_accum[1:] - fc_accum[:-1]
+            forecast[forecast < 0] = 0.
 
         # Convert units
         if unit == 'K':
