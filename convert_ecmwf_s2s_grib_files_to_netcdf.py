@@ -56,7 +56,7 @@ varnames = {'tmax': 'Maximum temperature at 2 metres since last 6 hours',
             'tp': 'Total precipitation'}
 
 # Loop over the forecasts and the hindcasts
-for fc_type in ['fc', 'hc']:
+for fc_type in ['fc','hc']:
     
     if fc_type == 'fc':
         fn_start = fn_fc_start
@@ -171,47 +171,12 @@ for fc_type in ['fc', 'hc']:
                         add_dates = add_dates + datetime.timedelta(step/24)
                         
                         dates = add_dates
-                
-                if dd == 15 and step == startsteps[0]:
-                    # Save the data after this step in a separate array
-                    # From the next step the resolution will become 0.4 instead of 0.2
-                    
-                    if fc_type == 'hc':
-                        # Sort the dates
-                        dates_ind = dates.argsort()
-                        forecast = forecast[dates_ind]
-                        dates = dates[dates_ind]
-                        
-                    if var_key == 'tp':
-                        fc_accum = forecast.copy()
-                        forecast = np.zeros(np.shape(forecast))
-                        forecast[1:] = fc_accum[1:] - fc_accum[:-1]
-                        forecast[forecast<0]=0.
-
-                    # Convert units
-                    if unit == 'K':
-                        forecast = forecast - 273.15
-                        unit = 'deg C'
-                    elif unit == 'm':
-                        forecast = 1000 * forecast
-                        unit = 'mm'
-                        
-                    member = range(forecast.shape[1])
-                    
-
-                    latvec_02 = lats[:,0]
-                    lonvec_02 = lons[0]
-                    dates_02 = dates
-                    xr02 = xr.DataArray(data=forecast,
-                                        coords=(dates_02, member, latvec_02, lonvec_02),
-                                        dims=('time', 'member', 'latitude', 'longitude'))
 
         if fc_type == 'hc':
             # Sort the dates
             dates_ind = dates.argsort()
             forecast = forecast[dates_ind]
             dates = dates[dates_ind]
-            
         if var_key == 'tp':
             fc_accum = forecast.copy()
             forecast = np.zeros(np.shape(forecast))
@@ -229,33 +194,25 @@ for fc_type in ['fc', 'hc']:
         member = range(forecast.shape[1])
             
         # Save the final time steps with the 0.4 degree resolution
-        latvec_04 = lats[:,0]
-        lonvec_04 = lons[0]
-        dates_04 = dates
-        xr04 = xr.DataArray(data=forecast,
-                            coords=(dates_04, member, latvec_04, lonvec_04),
-                            dims=('time', 'member', 'latitude', 'longitude'))
+        latvec = lats[:,0]
+        lonvec = lons[0]
+        dates = dates
+        dataset = xr.DataArray(data=forecast,
+                               coords=(dates, member, latvec, lonvec),
+                               dims=('time', 'member', 'latitude', 'longitude'))
     
         # Save the data in netcdf
-        xr02.to_netcdf(f'{output_dir}ecmwf_{fc_type}_{var_key}_{output_modeldatestr}_02.nc')
-        xr04.to_netcdf(f'{output_dir}ecmwf_{fc_type}_{var_key}_{output_modeldatestr}_04.nc')
+        dataset.to_netcdf(f'{output_dir}ecmwf_{fc_type}_{var_key}_{output_modeldatestr}.nc')
         
         # Save the data on the wi_api, so BMD can download it from there
         datasource = 'bangladesh_s2s'
-        dataset02 = f'ecmwf_{fc_type}_{var_key}_02'
-        dataset04 = f'ecmwf_{fc_type}_{var_key}_04'
+        datasetname = f'ecmwf_{fc_type}_{var_key}'
         
-        api_dir_02 = f'{api_dir}{datasource}/{dataset02}/netcdf/en/'
-        fn_02 = f'{datasource}.{dataset02}.netcdf.en_{output_modeldatestr}0000.nc'
-        api_dir_04 = f'{api_dir}{datasource}/{dataset04}/netcdf/en/'
-        fn_04 = f'{datasource}.{dataset04}.netcdf.en_{output_modeldatestr}0000.nc'
+        direc = f'{api_dir}{datasource}/{datasetname}/netcdf/en/'
+        fn = f'{datasource}.{datasetname}.netcdf.en_{output_modeldatestr}0000.nc'
         
-        if not os.path.exists(api_dir_02):
-            os.makedirs(api_dir_02)
-        if not os.path.exists(api_dir_04):
-            os.makedirs(api_dir_04)
+        if not os.path.exists(direc):
+            os.makedirs(direc)
         
-        xr02.to_netcdf(api_dir_02 + fn_02)
-        xr04.to_netcdf(api_dir_04 + fn_04)
-        
+        dataset.to_netcdf(direc + fn)        
         

@@ -62,18 +62,12 @@ for timedelta in range(6):
         # Make a forecast for each variable
         for var in varnames.keys():            
             # Load the ECMWF hindcast and forecast
-            fn_ec_hc_02 = f"{input_dir_ec}ecmwf_hc_{var}_{modeldatestr}_02.nc"
-            fn_ec_hc_04 = f"{input_dir_ec}ecmwf_hc_{var}_{modeldatestr}_04.nc"
+            fn_ec_hc = f"{input_dir_ec}ecmwf_hc_{var}_{modeldatestr}.nc"
+            fn_ec_fc = f"{input_dir_ec}ecmwf_fc_{var}_{modeldatestr}.nc"
             
-            fn_ec_fc_02 = f"{input_dir_ec}ecmwf_fc_{var}_{modeldatestr}_02.nc"
-            fn_ec_fc_04 = f"{input_dir_ec}ecmwf_fc_{var}_{modeldatestr}_04.nc"
+            ec_fc = xr.open_dataarray(fn_ec_fc)            
+            ec_hc = xr.open_dataarray(fn_ec_hc)
             
-            ec_02_fc = xr.open_dataarray(fn_ec_fc_02)
-            ec_04_fc = xr.open_dataarray(fn_ec_fc_04)
-            
-            ec_02_hc = xr.open_dataarray(fn_ec_hc_02)
-            ec_04_hc = xr.open_dataarray(fn_ec_hc_04)
-
             print(f'Start forecasts for {var}.')
             
             # Load the BMD gridded data
@@ -81,46 +75,34 @@ for timedelta in range(6):
             obs_var_nc = varnames[var]['obs_ncname']
             obs = xr.open_mfdataset(f'{input_dir_obs}merge_{obs_var_fn}_*')
             obs = obs[obs_var_nc]
-            
-            # Regrid the 0.4 degree ECMWF data to 0.2 degrees
-            ec_04_fc_regrid = xc.regrid(ec_04_fc, ec_02_fc.coords['longitude'].values, ec_02_fc.coords['latitude'].values, x_sample_dim= 'member')
-            ec_04_hc_regrid = xc.regrid(ec_04_hc, ec_02_hc.coords['longitude'].values, ec_02_hc.coords['latitude'].values, x_sample_dim= 'member')
-        
-            
-            # Merge the ECMWF 02 and 04 datasets
-            ec_fc_combined = xr.concat((ec_02_fc, ec_04_fc_regrid), dim='time')
-            ec_hc_combined = xr.concat((ec_02_hc, ec_04_hc_regrid), dim='time').sortby('time')
-            
-            # Remove the old variables
-            del ec_04_fc_regrid, ec_04_hc_regrid, ec_02_hc, ec_04_hc, ec_02_fc, ec_04_fc
-            
+                        
             # Generate daily values, use a time zone offset of 6 hours, so the daily
             # value is calculated from 6UTC-6UTC to match the Bangladesh day best
             resample = varnames[var]['resample']
-            len_1yr = len(ec_fc_combined)
-            nr_years = int(len(ec_hc_combined) / len_1yr)
+            len_1yr = len(ec_fc)
+            nr_years = int(len(ec_hc) / len_1yr)
             
             print('Resample data to daily values')
             if resample == 'max':
-                ec_fc_daily = ec_fc_combined.resample(time='24H', base=6).max('time')
+                ec_fc_daily = ec_fc.resample(time='24H', base=6).max('time')
                 for yy in range(nr_years):
-                    ec_hc_daily_yr = ec_hc_combined[len_1yr*yy:len_1yr*(yy+1)].resample(time='24H', base=6).max('time')
+                    ec_hc_daily_yr = ec_hc[len_1yr*yy:len_1yr*(yy+1)].resample(time='24H', base=6).max('time')
                     if yy == 0:
                         ec_hc_daily = ec_hc_daily_yr
                     else:
                         ec_hc_daily = xr.concat((ec_hc_daily, ec_hc_daily_yr), dim='time')
             elif resample == 'min':
-                ec_fc_daily = ec_fc_combined.resample(time='24H', base=6).min('time')
+                ec_fc_daily = ec_fc.resample(time='24H', base=6).min('time')
                 for yy in range(nr_years):
-                    ec_hc_daily_yr = ec_hc_combined[len_1yr*yy:len_1yr*(yy+1)].resample(time='24H', base=6).min('time')
+                    ec_hc_daily_yr = ec_hc[len_1yr*yy:len_1yr*(yy+1)].resample(time='24H', base=6).min('time')
                     if yy == 0:
                         ec_hc_daily = ec_hc_daily_yr
                     else:
                         ec_hc_daily = xr.concat((ec_hc_daily, ec_hc_daily_yr), dim='time')
             elif resample == 'sum':
-                ec_fc_daily = ec_fc_combined.resample(time='24H', base=6).sum('time')
+                ec_fc_daily = ec_fc.resample(time='24H', base=6).sum('time')
                 for yy in range(nr_years):
-                    ec_hc_daily_yr = ec_hc_combined[len_1yr*yy:len_1yr*(yy+1)].resample(time='24H', base=6).sum('time')
+                    ec_hc_daily_yr = ec_hc[len_1yr*yy:len_1yr*(yy+1)].resample(time='24H', base=6).sum('time')
                     if yy == 0:
                         ec_hc_daily = ec_hc_daily_yr
                     else:
@@ -146,7 +128,7 @@ for timedelta in range(6):
             
             obs = obs[days_to_take_obs]
             ec_hc_daily = ec_hc_daily[days_to_take_hc]
- 
+     
             print('Save the data')
             fn_hc = f"{output}ecmwf_hc_regrid_{var}_{modeldatestr}.nc"
             fn_fc = f"{output}ecmwf_fc_regrid_{var}_{modeldatestr}.nc"
@@ -157,7 +139,8 @@ for timedelta in range(6):
             ec_hc_daily.to_netcdf(fn_hc)
         
             del obs, ec_fc_daily, ec_hc_daily
-
-    except:
+    
+    except Exception as e:
+        print(e)
         print(f'No data available for {modeldate}. Continue to previous day.')
         continue

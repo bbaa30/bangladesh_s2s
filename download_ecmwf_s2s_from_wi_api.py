@@ -24,7 +24,6 @@ if not os.path.exists(output_dir):
     os.makedirs(output_dir)
 
 variables = ['tmax', 'tmin', 'tp']
-resolutions = ['02','04']
 fc_types = ['fc','hc']
 
 base_url = "https://service.weatherimpact.com/api/data/bangladesh_s2s/"
@@ -45,23 +44,22 @@ for timedelta in range(6):
     
     # Download the files for all variables, resolutions and forecast types
     for var in variables:
-        for res in resolutions:
-            for fc_type in fc_types:
+        for fc_type in fc_types:
+            
+            # Create the download url
+            url_add = f"ecmwf_{fc_type}_{var}?datetime={modeldatestr_api}&format=netcdf"
+            url = base_url + url_add
+            
+            # Do the api request
+            r = requests.get(url, headers=header)
+            
+            # Check the status code. If the code is 200, the request is successful
+            # Save the data if request is successful
+            if r.status_code == 200:
+            
+                # Write the response in a file
+                output_fn = f'{output_dir}ecmwf_{fc_type}_{var}_{modeldatestr_out}.nc'
                 
-                # Create the download url
-                url_add = f"ecmwf_{fc_type}_{var}_{res}?datetime={modeldatestr_api}&format=netcdf"
-                url = base_url + url_add
-                
-                # Do the api request
-                r = requests.get(url, headers=header)
-                
-                # Check the status code. If the code is 200, the request is successful
-                # Save the data if request is successful
-                if r.status_code == 200:
-                
-                    # Write the response in a file
-                    output_fn = f'{output_dir}ecmwf_{fc_type}_{var}_{modeldatestr_out}_{res}.nc'
-                    
-                    file = open(output_fn, "wb")
-                    file.write(r.content)
-                    file.close()
+                file = open(output_fn, "wb")
+                file.write(r.content)
+                file.close()
