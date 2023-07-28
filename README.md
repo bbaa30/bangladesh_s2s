@@ -1,5 +1,5 @@
 # S2S Bangladesh
-This repository contains scripts to create an S2S forecast for Bangladesh.
+This repository contains scripts to create an S2S forecast for Bangladesh. There are 2 subdirectories: one for sub-seasonal forecasts up to 4 weeks and one for seasonal forecasts up to 5 months.
 
 ## Installation
 ### Linux
@@ -12,8 +12,8 @@ The scripts run in Python 3.9 and have a set of required packages (see requireme
 ## Preparation
 The repository contains a configuration file (config_bd_s2s.ini). Please edit this file before using the scripts! The config file contains the directories where the data is stored. The important directory is the s2s_dir, which will be the sub-directory where all the data will be stored and the scripts directory, where all scripts are located.
 
-## Scripts
-The procedure of producing a forecast is as follows:
+## Sub-seasonal scripts
+The procedure of producing a sub-seasonal forecast is as follows:
  1. Run the script download_ecmwf_s2s_from_wi_api.py to collect the ECMWF netcdf input files
  2. Run the script download_eccc_s2s_operational.py to collect the ECCC netcdf input files
  3. Run the script download_cfsv2_operational.py to collect the NCEP CFSv2 netcdf forecast files
@@ -32,10 +32,18 @@ The operational forecast script checks which data is available and creates a mul
 
 The scripts check the latest available data and will create a forecast for this date.
 
+## Seasonal scripts
+The seasonal scripts run once per month, around the 15th day of the month. Run the following scripts:
+ 1. download_seasonal_forecast_bangladesh_cds.py
+ 2. prepare_cds_files.py
+ 3. operational_seasonal_forecast.py
+
 ## Output
 The scripts have several output files:
  - Figures with the skill analysis of the hindcast per model
  - Figures with the current forecast
  - JSON and CSV file with the forecast values on district level
  - Bulletin with forecast
+
+For the seasonal forecast, figures with skills and figures with the forecast are outputted.
 
