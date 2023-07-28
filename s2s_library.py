@@ -20,6 +20,8 @@ from pyproj import Proj, transform
 import collections
 import os
 from shapely.geometry import shape, Polygon
+from scipy.stats.mstats import mquantiles
+from scipy.interpolate import interp1d
 
 def combine_models(ecmwf_available, eccc_available, ncep_available,
                    obs_ecm, obs_ecc, obs_cfsv2,
@@ -215,6 +217,246 @@ def combine_models(ecmwf_available, eccc_available, ncep_available,
     
     return obs, fc_daily, hc_daily, models
 
+def combine_seasonal_models(model_info, var):
+    '''
+    Function to combine multiple seasonal forecast models into multi-model ensemble.
+    
+    Input:
+        model_info: dictionairy with for each model an xarray for forecast, 
+                    hindcast and observations.
+    
+    Output:
+        mm_fc: xr.DataArray with the multi-model forecast
+        mm_hc: xr.DataArray with the multi-model hindcasts
+        mm_obs: xr.DataArray with the observations with same timestep as hindcasts
+        model_list: list with all the models that are used
+    '''
+    
+    mm_fc = xr.DataArray([])
+    mm_hc = xr.DataArray([])
+    mm_obs = xr.DataArray([])
+    model_list = []
+
+    for model in model_info.keys():
+        
+        model_list.append(model)
+        
+        # Get the forecast of the single model
+        single_fc = model_info[model]['forecast']
+        single_hc = model_info[model]['hindcast']
+        single_obs = model_info[model]['observations']
+        
+        single_fc.name = var
+        single_hc.name = var
+        single_obs.name = var
+        
+        if len(mm_fc) == 0:
+            mm_fc = single_fc
+            mm_hc = single_hc
+            mm_obs = single_obs
+        else:
+            # Add the number of members of the previous mm_ensemble
+            single_fc = single_fc.assign_coords(number=single_fc['number'] + mm_fc['number'][-1] + 1)
+            single_hc = single_hc.assign_coords(number=single_hc['number'] + mm_hc['number'][-1] + 1)
+                        
+            # Merge the new model into the ensemble
+            mm_fc = xr.merge((mm_fc, single_fc))
+            mm_hc = xr.merge((mm_hc, single_hc))
+
+            # Days to take
+            days_to_take = [mm_obs.time.values[ii] in single_obs.time.values for ii in range(len(mm_obs.time))]            
+            mm_obs = mm_obs[days_to_take]
+        
+    # Convert the xr.Dataset to xr.DataArray
+    mm_fc = mm_fc.to_array()[0]
+    mm_hc = mm_hc.to_array()[0]
+
+    
+    return mm_fc, mm_hc, mm_obs, model_list
+
+def get_start_end_times_seasonal(month):
+    '''
+    The function provides for each month the start and end times of the different
+    forecast months. It also provides a list with the keys
+    '''
+    start_end_times = {1: {'start': 0,
+                           'end': 3},
+                       2: {'start': 1,
+                           'end': 4},
+                       3: {'start': 2,
+                           'end': 5},
+                       4: {'start': 3,
+                           'end': 6}}
+    if month == 1:
+        start_end_times[1]['months'] = 'JFM'
+        start_end_times[2]['months'] = 'FMA'
+        start_end_times[3]['months'] = 'MAM'
+        start_end_times[4]['months'] = 'AMJ'
+    elif month == 2:
+        start_end_times[1]['months'] = 'FMA'
+        start_end_times[2]['months'] = 'MAM'
+        start_end_times[3]['months'] = 'AMJ'
+        start_end_times[4]['months'] = 'MJJ'
+    elif month == 3:
+        start_end_times[1]['months'] = 'MAM'
+        start_end_times[2]['months'] = 'AMJ'
+        start_end_times[3]['months'] = 'MJJ'    
+        start_end_times[4]['months'] = 'JJA'
+    elif month == 4:
+        start_end_times[1]['months'] = 'AMJ'
+        start_end_times[2]['months'] = 'MJJ'    
+        start_end_times[3]['months'] = 'JJA'
+        start_end_times[4]['months'] = 'JAS'
+        start_end_times[5] = {'start': 2,
+                              'end': 6,
+                              'months': 'JJAS'}
+    elif month == 5:
+        start_end_times[1]['months'] = 'MJJ'    
+        start_end_times[2]['months'] = 'JJA'
+        start_end_times[3]['months'] = 'JAS'
+        start_end_times[4]['months'] = 'ASO'
+        start_end_times[5] = {'start': 1,
+                              'end': 5,
+                              'months': 'JJAS'}
+    elif month == 6:
+        start_end_times[1]['months'] = 'JJA'
+        start_end_times[2]['months'] = 'JAS'
+        start_end_times[3]['months'] = 'ASO'
+        start_end_times[4]['months'] = 'SON'    
+        start_end_times[5] = {'start': 0,
+                              'end': 4,
+                              'months': 'JJAS'}
+    elif month == 7:
+        start_end_times[1]['months'] = 'JAS'
+        start_end_times[2]['months'] = 'ASO'
+        start_end_times[3]['months'] = 'SON' 
+        start_end_times[4]['months'] = 'OND'
+    elif month == 8:
+        start_end_times[1]['months'] = 'ASO'
+        start_end_times[2]['months'] = 'SON' 
+        start_end_times[3]['months'] = 'OND'
+        start_end_times[4]['months'] = 'NDJ'
+    elif month == 9:
+        start_end_times[1]['months'] = 'SON' 
+        start_end_times[2]['months'] = 'OND'
+        start_end_times[3]['months'] = 'NDJ'
+        start_end_times[4]['months'] = 'DJF'
+    elif month == 10:
+        start_end_times[1]['months'] = 'OND'
+        start_end_times[2]['months'] = 'NDJ'
+        start_end_times[3]['months'] = 'DJF'
+        start_end_times[4]['months'] = 'JFM' 
+    elif month == 11:
+        start_end_times[1]['months'] = 'NDJ'
+        start_end_times[2]['months'] = 'DJF'
+        start_end_times[3]['months'] = 'JFM' 
+        start_end_times[4]['months'] = 'FMA'
+    elif month == 12:
+        start_end_times[1]['months'] = 'DJF'
+        start_end_times[2]['months'] = 'JFM' 
+        start_end_times[3]['months'] = 'FMA'
+        start_end_times[4]['months'] = 'MAM'
+    
+    return start_end_times
+        
+def calculate_qd_correction(obs, fc, hc):
+    '''
+    Function to calculate a corrected forecast using quantile delta mapping
+    
+    Input:
+        obs: observations
+        fc: forecast
+        hc: hindcast
+    
+    Output:
+        deterministic_fc: deterministic output
+    
+    '''
+    # Perform the bias correction with observations based on quantile to quantile mapping
+    fc_bc = xr.full_like(fc, 0.)
+    fc_bias_corrected = np.zeros(np.shape(fc))
+    
+    for tt in range(fc_bias_corrected.shape[0]):
+        for xx in range(fc_bias_corrected.shape[2]):
+            for yy in range(fc_bias_corrected.shape[3]):
+                obs_i = obs[tt,:,xx,yy].values
+                hc_i = hc[tt,:,xx,yy].values
+                fc_i = fc[tt,:,xx,yy].values
+                
+                fc_bias_corrected[tt,:,xx,yy] = q_q_map(obs_i, hc_i, fc_i, nbins=51)
+    
+    fc_bc.data = fc_bias_corrected
+    
+    return fc_bc
+
+def calculate_prob_forecast(obs, fc, hc):
+    '''
+    Function to calculate a corrected forecast using quantile delta mapping
+    
+    Input:
+        obs: observations
+        fc: forecast
+        hc: hindcast
+    
+    Output:
+        probabilistic_fc: probabilistic output
+    
+    '''
+    
+    # Calculate climate percentiles
+    N_ens = len(fc['member'])
+    p33 = hc.quantile(q=0.33, dim=('member','time'))
+    p67 = hc.quantile(q=0.67, dim=('member','time'))
+    
+    # Calculate the likelihood for all terciles
+    low = (fc<p33).sum('member') / N_ens * 100.
+    normal = ((fc >= p33) * (fc <= p67)).sum('member') / N_ens * 100.
+    high = (fc>p67).sum('member') / N_ens * 100.
+    
+    # Change back to xarray
+    prob_fc = xr.DataArray([low,normal,high], coords={'member': ['BN','NN','AN'],
+                                                      'time': fc.time,
+                                                      'latitude': fc.latitude,
+                                                      'longitude': fc.longitude})
+    
+    prob_fc = prob_fc.transpose("time", "member", "latitude", "longitude")
+    
+    return prob_fc
+    
+        
+def q_q_map(obs, p, s, nbins=10, extrapolate=None):
+    '''
+    Function to perform a quantile to quantile mapping from the forecast to the
+    CHIRPS climatology. 
+    
+    Input:
+        obs: 1D array with climatology of CHIRPS for single location and month
+        p: 1D array with climatoloty of the forecast model for single location and month
+        s: 1D array of the current forecast for single location and month
+        nbins: int: the amount of output bins
+        extrapolate: None or 'constant'. With None, take the highest value from
+                     the climatology if the value is out of range. With 'contant'
+                     take a linear extrapolation
+    
+    Output:
+        c: 1D array of current bias corrected forecast using quantile to 
+           quantile mapping for single location and month
+    '''
+    
+    binmid = np.arange((1./nbins)*0.5, 1., 1./nbins)
+    qo = mquantiles(obs[np.isfinite(obs)], prob=binmid)
+    qp = mquantiles(p[np.isfinite(p)], prob=binmid)
+    p2o = interp1d(qp, qo, kind='linear', bounds_error=False)
+    c = p2o(s)
+    if extrapolate is None:
+        c[s > np.max(qp)] = qo[-1]
+        c[s < np.min(qp)] = qo[0]
+    elif extrapolate == 'constant':
+        c[s > np.max(qp)] = s[s > np.max(qp)] + qo[-1] - qp[-1]
+        c[s < np.min(qp)] = s[s < np.min(qp)] + qo[0] - qp[0]
+    
+    return c
+
 def resample_data(obs, fc_daily, hc_daily, var, start_end_times, period, resample):
     '''
     Function to resample the data (observations, forecast and hindcast ) to 
@@ -378,7 +620,8 @@ def plot_skill_score(value, obs, levels, cmap, extend, title, fig_dir, filename)
     plt.savefig(fig_dir + filename)
 
 def plot_forecast(var, period, deterministic_fc_smooth, deterministic_anomaly, 
-                  probabilistic_fc_smooth, fig_dir_fc, modeldatestr):
+                  probabilistic_fc_smooth, fig_dir_fc, model, modeldatestr,
+                  fc_type):
     '''
     Make a figure with the deterministic, anomaly and probabilistic forecast 
     as png and as eps format.
@@ -389,7 +632,9 @@ def plot_forecast(var, period, deterministic_fc_smooth, deterministic_anomaly,
         deterministic_anomaly: xr.DataArray: the deterministic anomaly forecast
         probabilictic_fc_smooth: xr.DataArray: the smoothed probabilistic forecast
         fig_dir_fc: str: the directory to store the figures
+        model: str: name of the model
         modeldatestr: str: string with the modeldate
+        fc_type: str: 'seasonal' or 'sub-seasonal'
     
     Ouput:
         2 figures with the forecast are stored in fig_dir_fc:
@@ -399,68 +644,68 @@ def plot_forecast(var, period, deterministic_fc_smooth, deterministic_anomaly,
     
     # Set the metadata for the figures
     if var == 'tmin':
-        cmap_det = plt.cm.gist_ncar
+        cmap_det = 'gist_ncar'
         cmap_anom = 'RdBu_r'
         cmap_below = 'Blues'
         cmap_above = 'YlOrRd'
-        norm_det = mpl.colors.Normalize(vmin=10, vmax=35)
-        cmap_det.set_over(plt.cm.gist_ncar(norm_det(38)))
-        cmap_det.set_under(plt.cm.gist_ncar(norm_det(13)))
-        levels_det = np.linspace(15,30,16)
-        ticks_det = np.linspace(15,30,7)
-        levels_anom = np.linspace(-5,5,21)
-        ticks_anom = np.linspace(-5,5,5)
+        norm_det = mpl.colors.Normalize(vmin=0, vmax=55)
+        levels_det = np.linspace(5,30,26)
+        ticks_det = np.linspace(5,30,6)
+        levels_anom = np.linspace(-6,6,25)
+        ticks_anom = np.linspace(-6,6,5)
         label_det = u'Minimum temperature (\N{DEGREE SIGN}C)'
         label_anom = u'Temperature anomaly (\N{DEGREE SIGN}C)'
     elif var == 'tmax':
-        cmap_det = plt.cm.gist_ncar
+        cmap_det = 'gist_ncar'
         cmap_anom = 'RdBu_r'
         cmap_below = 'Blues'
         cmap_above = 'YlOrRd'
-        norm_det = mpl.colors.Normalize(vmin=20, vmax=55)
-        cmap_det.set_over(plt.cm.gist_ncar(norm_det(47)))
-        cmap_det.set_under(plt.cm.gist_ncar(norm_det(28)))
-        levels_det = np.linspace(30,45,21)
-        ticks_det = np.linspace(30,45,7)
-        levels_anom = np.linspace(-5,5,21)
-        ticks_anom = np.linspace(-5,5,5)
+        norm_det = mpl.colors.Normalize(vmin=0, vmax=55)
+        levels_det = np.linspace(15,45,31)
+        ticks_det = np.linspace(15,45,7)
+        levels_anom = np.linspace(-6,6,25)
+        ticks_anom = np.linspace(-6,6,5)
         label_det = u'Maximum temperature (\N{DEGREE SIGN}C)'
         label_anom = u'Temperature anomaly (\N{DEGREE SIGN}C)'
     elif var == 'tp':
         # Set negative values to 0
-        deterministic_fc_smooth.values[deterministic_fc_smooth.values <= 0.5] = 0.
+        deterministic_fc_smooth.values[deterministic_fc_smooth.values <= 0.] = 0.
         
         # Make the maximum of precipitation dyanmic
         max_tp = np.nanmax(deterministic_fc_smooth)
-        max_anom = max(abs(np.nanmax(deterministic_anomaly)),abs(np.nanmin(deterministic_anomaly)))
         
         # Ceil value up to next 10
         max_tp = math.ceil(max_tp/10)*10
-        max_anom = math.ceil(max_tp/10)*10
         
         if max_tp < 30:
             # Set the maximum at 30 mm if the maximum is lower
             max_tp = 30.
         
-        if max_anom < 10:
-            max_anom = 10.
-        
-        norm_det = mpl.colors.Normalize(vmin=0.5, vmax=max_tp)
+        norm_det = mpl.colors.Normalize(vmin=0, vmax=max_tp)
         cmap_det = cmocean.cm.haline_r
         cmap_anom = 'BrBG'
         cmap_below = 'YlOrRd'
         cmap_above = 'Greens'
         levels_det = np.linspace(0,max_tp,17)
         ticks_det = np.linspace(0,max_tp,5)
-        levels_anom = np.linspace(-max_anom,max_anom,21)
-        ticks_anom = np.linspace(-max_anom,max_anom,5)
+        if fc_type == 'sub-seasonal':
+            levels_anom = np.linspace(-50,50,21)
+            ticks_anom = np.linspace(-50,50,5)
+        elif fc_type == 'seasonal':
+            levels_anom = np.linspace(-200,200,21)
+            ticks_anom = np.linspace(-200,200,5)
         label_det = 'Precipitation (mm)'
         label_anom = 'Precipitation amomaly (mm)'
 
     # Preprocess the probabilistic data
-    bn_fc = 100*probabilistic_fc_smooth[0,0]
-    nn_fc = 100*probabilistic_fc_smooth[1,0]
-    an_fc = 100*probabilistic_fc_smooth[2,0]
+    if float(probabilistic_fc_smooth.max()) < 1.:
+        bn_fc = 100*probabilistic_fc_smooth[0,0]
+        nn_fc = 100*probabilistic_fc_smooth[1,0]
+        an_fc = 100*probabilistic_fc_smooth[2,0]
+    else:
+        bn_fc = probabilistic_fc_smooth[0,0]
+        nn_fc = probabilistic_fc_smooth[1,0]
+        an_fc = probabilistic_fc_smooth[2,0]
     
     levels_outer = np.linspace(40,80,9)
     levels_inner = np.linspace(40,50,3)
@@ -533,8 +778,8 @@ def plot_forecast(var, period, deterministic_fc_smooth, deterministic_anomaly,
 
     plt.subplots_adjust(wspace=0.025, hspace=0.025, bottom=0.15)
     plt.tight_layout()
-    plt.savefig(fig_dir_fc + f'fc_{var}_{period}_{modeldatestr}.eps', format='eps', bbox_inches='tight')    
-    plt.savefig(fig_dir_fc + f'fc_{var}_{period}_{modeldatestr}.png', format='png', bbox_inches='tight')
+    plt.savefig(fig_dir_fc + f'fc_{var}_{period}_{model}_{modeldatestr}.eps', format='eps', bbox_inches='tight')    
+    plt.savefig(fig_dir_fc + f'fc_{var}_{period}_{model}_{modeldatestr}.png', format='png', bbox_inches='tight')
     
 def save_forecast(varname, varunit, data, lat, lon, datapath_output,
                   filename, projection='epsg:3857', fill_value=-9999):
