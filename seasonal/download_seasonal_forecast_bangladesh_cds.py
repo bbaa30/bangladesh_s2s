@@ -16,7 +16,7 @@ from configparser import ConfigParser
 
 # Read the basic paths from the config file
 config = ConfigParser()
-config.read('/srv/config/config_bd_s2s.ini')
+config.read('../config_bd_s2s.ini')
 
 
 #%%

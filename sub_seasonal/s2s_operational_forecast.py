@@ -751,7 +751,7 @@ for timedelta in range(7):
              "metadata": {"description": "S2S forecast for Bangladesh based on a multi model ensemble.",
                           "model_combination": models,
                           "modeldate": str(modeldate),
-                          "forecast_start": str(today),
+                          "forecast_start": str(modeldate + datetime.timedelta(days=start_end_times['week1']['start'])),
                           "district_list": district_list,
                           "indicator_description": {"fc_value": "Deterministic forecast values",
                                                    "rank_value": "The ensemble average value expressed as percentile of the model climatology",

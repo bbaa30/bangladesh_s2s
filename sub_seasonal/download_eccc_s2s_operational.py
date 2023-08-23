@@ -17,7 +17,7 @@ from configparser import ConfigParser
 
 # Read the basic paths from the config file
 config = ConfigParser()
-config.read('config_bd_s2s.ini')
+print(config.read('../config_bd_s2s.ini'))
 
 output_dir = config['paths']['s2s_dir'] + 'input_eccc/'
 
@@ -32,7 +32,7 @@ variables = ['tasmax', 'tasmin', 'pr']
 fc_types = {'fc': 'forecast',
             'hc': 'hindcast'}
 
-today = datetime.datetime.today()
+today = datetime.datetime.today() - datetime.timedelta(4)
 lastweek = today - datetime.timedelta(7)
 modeldatestr = today.strftime("%Y%m%d")
 
