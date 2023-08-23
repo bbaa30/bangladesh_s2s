@@ -26,7 +26,7 @@ config.read('../config_bd_s2s.ini')
 direc = config['paths']['s2s_dir'] 
 
 input_dir_model = direc + 'input_eccc/'
-input_dir_obs = direc + 'input_bmd_gridded_data/'
+input_dir_obs = config['paths']['data_dir']  + 'input_bmd_gridded_data/'
 output = direc + 'input_regrid/'
 
 if not os.path.exists(output):
