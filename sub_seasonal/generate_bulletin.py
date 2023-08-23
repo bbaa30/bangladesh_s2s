@@ -30,7 +30,8 @@ config.read('../config_bd_s2s.ini')
 
 # Set the directories from the config file
 direc = config['paths']['s2s_dir'] 
-template_dir = direc + 'bulletin_template/'
+git_dir = config['paths']['script_dir']
+template_dir = git_dir + 'bulletin_template/'
 input_fig_dir = direc + 'output_figures_forecast/'
 output_dir = direc + 'output_bulletin/'
 
@@ -123,28 +124,4 @@ for timedelta in range(5):
     
     except:
         continue
-    
-import pandas as pd
-import requests
-
-# response = requests.get("http://www.bom.gov.au/climate/mjo/graphics/rmm.74toRealtime.txt")
-
-# text = response.text
-
-# df = pd.read_csv("http://www.bom.gov.au/climate/mjo/graphics/rmm.74toRealtime.txt", 
-#                   delim_whitespace=True, 
-#                   comment="#",
-#                   header=None,
-#                   names=["year", "mon", "day", "PCx", "PCy", "phase", "Amp(nrm)", "Amp(non-nrm)"])
-
-# Read the text file into a DataFrame
-df = pd.read_csv("https://iprc.soest.hawaii.edu/users/kazuyosh/ISO_index/data/MJO_25-90bpfil.rt_pc.txt", 
-                  delim_whitespace=True, 
-                  comment="#",
-                  header=None,
-                  names=["year", "mon", "day", "PCx", "PCy", "phase", "Amp(nrm)" , "Amp(non-nrm)"])
-
-# Extract the latest value from the "phase" column
-latest_phase = df["phase"].iloc[-1]
-
-print("Latest phase value:", latest_phase)
+  

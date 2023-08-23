@@ -37,7 +37,8 @@ config = ConfigParser()
 config.read('../config_bd_s2s.ini')
 
 # Set the directories from the config file
-direc = config['paths']['s2s_dir'] 
+direc = config['paths']['s2s_dir']
+git_dir = config['paths']['script_dir']
 
 lib_dir = config['paths']['library']
 sys.path.append(lib_dir)
@@ -116,9 +117,9 @@ shape_info = {0: {'name_column': 1,             # Level 0 is the country
 shp_level = 2
 
 # Load shape information
-shp_fn = direc + f'gadm41_BGD_shp/gadm41_BGD_{shp_level}.shp'
+shp_fn = git_dir + f'gadm41_BGD_shp/gadm41_BGD_{shp_level}.shp'
 shp_file = shapefile.Reader(shp_fn)
-shape_mask_dir = direc + f'shape_mask/{shp_level}/'
+shape_mask_dir = git_dir + f'shape_mask/{shp_level}/'
 gpd_data = gpd.read_file(shp_fn)
 
 shape_name = shape_info[shp_level]['name_shapes']
