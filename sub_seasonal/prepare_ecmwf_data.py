@@ -51,7 +51,7 @@ varnames = {'tmax': {'obs_filename': 'tmax',
                    'resample': 'sum'}}
 
 # Loop over the last 5 days
-for timedelta in [1]:# range(6): 
+for timedelta in range(6): 
     # Set the modeldate
     modeldate = today - datetime.timedelta(timedelta)
     modeldatestr = modeldate.strftime("%Y%m%d")
