@@ -38,7 +38,7 @@ config.read('../config_bd_s2s.ini')
 
 # Set the directories from the config file
 direc = config['paths']['s2s_dir']
-git_dir = config['paths']['script_dir']
+git_dir = config['paths']['home']
 
 lib_dir = config['paths']['library']
 sys.path.append(lib_dir)
