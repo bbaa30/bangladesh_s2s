@@ -19,7 +19,9 @@ from configparser import ConfigParser
 
 # Read the basic paths from the config file
 config = ConfigParser()
-config.read('../config_bd_s2s.ini')
+cwd = os.getcwd()
+parent = os.path.abspath(os.path.join(cwd, os.pardir))
+config.read(parent+'/config_bd_s2s.ini')
 
 date = datetime.date.today()
 if date.day < 16:
@@ -34,7 +36,7 @@ direc = config['paths']['seasonal_dir']
 data_dir_cds = direc + 'input_cds_files/' # Directory where Copernicus forecasts are stored
 data_dir_clim = direc + 'input_climatology/' # Directory where climatology is stored
 output_dir = direc + 'input_regrid/'
-input_dir_obs = config['paths']['s2s_dir'] + 'input_bmd_gridded_data/'
+input_dir_obs = config['paths']['data_dir'] + 'input_bmd_gridded_data/'
 
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)

@@ -35,7 +35,9 @@ from configparser import ConfigParser
 
 # Read the basic paths from the config file
 config = ConfigParser()
-config.read('../config_bd_s2s.ini')
+cwd = os.getcwd()
+parent = os.path.abspath(os.path.join(cwd, os.pardir))
+config.read(parent+'/config_bd_s2s.ini')
 
 # Set the directories from the config file
 direc = config['paths']['seasonal_dir'] 
@@ -123,9 +125,9 @@ shape_info = {0: {'name_column': 1,             # Level 0 is the country
 shp_level = 1
 
 # Load shape information
-shp_fn = config['paths']['s2s_dir'] + f'gadm41_BGD_shp/gadm41_BGD_{shp_level}.shp'
+shp_fn = config['paths']['home'] + f'gadm41_BGD_shp/gadm41_BGD_{shp_level}.shp'
 shp_file = shapefile.Reader(shp_fn)
-shape_mask_dir = config['paths']['seasonal_dir'] + f'shape_mask/{shp_level}/'
+shape_mask_dir = config['paths']['home'] + f'shape_mask/{shp_level}/'
 gpd_data = gpd.read_file(shp_fn)
 
 shape_name = shape_info[shp_level]['name_shapes']
@@ -133,7 +135,7 @@ name_col = shape_info[shp_level]['name_column']
 name_col_higher = shape_info[shp_level]['name_column_higher']
 
 # Load division ID and name mapping
-division_mapping = pd.read_csv(config['paths']['s2s_dir'] + 'gadm41_BGD_shp/bd_division_codes.csv')
+division_mapping = pd.read_csv(config['paths']['home'] + 'gadm41_BGD_shp/bd_division_codes.csv')
 
 # Generate a pandas table for the divisional values
 shape_data = pd.DataFrame(index=range(len(gpd_data)), columns=[shape_name, 'tmax_week1', 'tmin_week1', 'tp_week1',

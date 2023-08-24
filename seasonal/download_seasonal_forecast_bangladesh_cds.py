@@ -16,7 +16,9 @@ from configparser import ConfigParser
 
 # Read the basic paths from the config file
 config = ConfigParser()
-config.read('../config_bd_s2s.ini')
+cwd = os.getcwd()
+parent = os.path.abspath(os.path.join(cwd, os.pardir))
+config.read(parent+'/config_bd_s2s.ini')
 
 
 #%%
@@ -35,6 +37,10 @@ direc = config['paths']['seasonal_dir']
 data_dir_cds = direc + 'input_cds_files/' # Directory where Copernicus forecasts are stored
 data_dir_clim = direc + 'input_climatology/' # Directory where climatology is stored
 meta_dir = direc + 'input_metadata/' # Directory with metadata
+
+for direc in [data_dir_cds, data_dir_clim]:
+    if not os.path.exists(direc):
+        os.makedirs(direc)
 
 # Mapping dictionairies to obtain the correct system version number and centre name
 system_map_fn = 'seasonal_forecast_system_versions.csv'
