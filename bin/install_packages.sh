@@ -10,3 +10,6 @@ while read requirements; do conda install --yes $requirements; done < requiremen
 # Move ecmwfapirc and cdsapirc file
 mv ecmwfapirc ~/.ecmwfapirc
 mv cdsapirc ~/.cdsapirc
+#
+# Move the seasonal forecast systems version
+mv seasonal_forecast_system_versions.csv ~/data/seasonal/input_metadata/seasonal_forecast_system_verions.csv
