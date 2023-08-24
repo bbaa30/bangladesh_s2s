@@ -38,7 +38,7 @@ config.read('../config_bd_s2s.ini')
 
 # Set the directories from the config file
 direc = config['paths']['s2s_dir']
-git_dir = config['paths']['home']
+home_dir = config['paths']['home']
 
 lib_dir = config['paths']['library']
 sys.path.append(lib_dir)
@@ -117,9 +117,9 @@ shape_info = {0: {'name_column': 1,             # Level 0 is the country
 shp_level = 2
 
 # Load shape information
-shp_fn = git_dir + f'gadm41_BGD_shp/gadm41_BGD_{shp_level}.shp'
+shp_fn = home_dir + f'gadm41_BGD_shp/gadm41_BGD_{shp_level}.shp'
 shp_file = shapefile.Reader(shp_fn)
-shape_mask_dir = git_dir + f'shape_mask/{shp_level}/'
+shape_mask_dir = home_dir + f'shape_mask/{shp_level}/'
 gpd_data = gpd.read_file(shp_fn)
 
 shape_name = shape_info[shp_level]['name_shapes']
@@ -127,7 +127,7 @@ name_col = shape_info[shp_level]['name_column']
 name_col_higher = shape_info[shp_level]['name_column_higher']
 
 # Load district ID and name mapping
-district_mapping = pd.read_csv(direc + 'gadm41_BGD_shp/bd_district_codes.csv')
+district_mapping = pd.read_csv(home_dir + 'gadm41_BGD_shp/bd_district_codes.csv')
 
 # Generate a pandas table for the divisional values
 shape_data = pd.DataFrame(index=range(len(gpd_data)), columns=[shape_name, 'tmax_week1', 'tmin_week1', 'tp_week1',
