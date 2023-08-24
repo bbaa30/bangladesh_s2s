@@ -30,8 +30,8 @@ config.read('../config_bd_s2s.ini')
 
 # Set the directories from the config file
 direc = config['paths']['s2s_dir'] 
-git_dir = config['paths']['script_dir']
-template_dir = git_dir + 'bulletin_template/'
+home_dir = config['paths']['home']
+template_dir = home_dir + 'bulletin_template/'
 input_fig_dir = direc + 'output_figures_forecast/'
 output_dir = direc + 'output_bulletin/'
 
