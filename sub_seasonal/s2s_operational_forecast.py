@@ -34,9 +34,7 @@ from configparser import ConfigParser
 
 # Read the basic paths from the config file
 config = ConfigParser()
-cwd = os.getcwd()
-parent = os.path.abspath(os.path.join(cwd, os.pardir))
-config.read(parent+'/config_bd_s2s.ini')
+config.read('config_bd_s2s.ini')
 
 # Set the directories from the config file
 direc = config['paths']['s2s_dir']
