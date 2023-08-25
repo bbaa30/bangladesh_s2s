@@ -46,6 +46,7 @@ today = datetime.datetime(today.year,
                           0,0)
 
 aggregation_level = 'district' # Choose from division or district
+model = 'multi_model'
 
 # Loop over the last 5 days to find the most recent data
 for timedelta in range(5): 
@@ -74,15 +75,15 @@ for timedelta in range(5):
         template = DocxTemplate(template_dir+template_name)
         
         # Create image object from images
-        fig_tmax_wk1 = InlineImage(template, input_fig_dir+f"fc_tmax_week1_{modeldatestr}.png", Cm(15))
-        fig_tmin_wk1 = InlineImage(template, input_fig_dir+f"fc_tmin_week1_{modeldatestr}.png", Cm(15))
-        fig_tp_wk1 = InlineImage(template, input_fig_dir+f"fc_tp_week1_{modeldatestr}.png", Cm(15))
-        fig_tmax_wk2 = InlineImage(template, input_fig_dir+f"fc_tmax_week2_{modeldatestr}.png", Cm(15))
-        fig_tmin_wk2 = InlineImage(template, input_fig_dir+f"fc_tmin_week2_{modeldatestr}.png", Cm(15))
-        fig_tp_wk2 = InlineImage(template, input_fig_dir+f"fc_tp_week2_{modeldatestr}.png", Cm(15))
-        fig_tmax_wk34 = InlineImage(template, input_fig_dir+f"fc_tmax_week3+4_{modeldatestr}.png", Cm(15))
-        fig_tmin_wk34 = InlineImage(template, input_fig_dir+f"fc_tmin_week3+4_{modeldatestr}.png", Cm(15))
-        fig_tp_wk34 = InlineImage(template, input_fig_dir+f"fc_tp_week3+4_{modeldatestr}.png", Cm(15))
+        fig_tmax_wk1 = InlineImage(template, input_fig_dir+f"fc_tmax_week1_{model}_{modeldatestr}.png", Cm(15))
+        fig_tmin_wk1 = InlineImage(template, input_fig_dir+f"fc_tmin_week1_{model}_{modeldatestr}.png", Cm(15))
+        fig_tp_wk1 = InlineImage(template, input_fig_dir+f"fc_tp_week1_{model}_{modeldatestr}.png", Cm(15))
+        fig_tmax_wk2 = InlineImage(template, input_fig_dir+f"fc_tmax_week2_{model}_{modeldatestr}.png", Cm(15))
+        fig_tmin_wk2 = InlineImage(template, input_fig_dir+f"fc_tmin_week2_{model}_{modeldatestr}.png", Cm(15))
+        fig_tp_wk2 = InlineImage(template, input_fig_dir+f"fc_tp_week2_{model}_{modeldatestr}.png", Cm(15))
+        fig_tmax_wk34 = InlineImage(template, input_fig_dir+f"fc_tmax_week3+4_{model}_{modeldatestr}.png", Cm(15))
+        fig_tmin_wk34 = InlineImage(template, input_fig_dir+f"fc_tmin_week3+4_{model}_{modeldatestr}.png", Cm(15))
+        fig_tp_wk34 = InlineImage(template, input_fig_dir+f"fc_tp_week3+4_{model}_{modeldatestr}.png", Cm(15))
         
         
         # Declare template variables
