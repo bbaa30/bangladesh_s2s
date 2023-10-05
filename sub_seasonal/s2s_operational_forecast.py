@@ -592,9 +592,9 @@ for timedelta in range(7):
                 # Set the data and the integration method (now average is chosen)
                 input_grid = deterministic_fc_smooth.values
                 input_ano = deterministic_anomaly.values
-                input_bn = 100*probabilistic_fc_smooth[0,0].values
-                input_nn = 100*probabilistic_fc_smooth[1,0].values
-                input_an = 100*probabilistic_fc_smooth[2,0].values  
+                input_bn = probabilistic_fc_smooth[0,0].values
+                input_nn = probabilistic_fc_smooth[1,0].values
+                input_an = probabilistic_fc_smooth[2,0].values
                 input_grid[np.isnan(input_grid)] = 0.
                 input_ano[np.isnan(input_ano)] = 0.
                 input_bn[np.isnan(input_bn)] = 0.

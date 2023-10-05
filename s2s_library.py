@@ -695,7 +695,7 @@ def plot_forecast(var, period, deterministic_fc_smooth, deterministic_anomaly,
             levels_anom = np.linspace(-200,200,21)
             ticks_anom = np.linspace(-200,200,5)
         label_det = 'Precipitation (mm)'
-        label_anom = 'Precipitation amomaly (mm)'
+        label_anom = 'Precipitation anomaly (mm)'
 
     # Preprocess the probabilistic data
     if float(probabilistic_fc_smooth.max()) < 1.:
