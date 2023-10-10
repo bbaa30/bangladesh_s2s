@@ -32,7 +32,7 @@ variables = ['tasmax', 'tasmin', 'pr']
 fc_types = {'fc': 'forecast',
             'hc': 'hindcast'}
 
-today = datetime.datetime.today() - datetime.timedelta(4)
+today = datetime.datetime.today()
 lastweek = today - datetime.timedelta(7)
 modeldatestr = today.strftime("%Y%m%d")
 
