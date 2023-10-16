@@ -4,6 +4,7 @@
 Created on Mon Feb  6 09:01:33 2023
 
 @author: bob
+Modified by: Lorenzo: addition of plotting functions for aggregated data
 """
 import numpy as np
 import xarray as xr
@@ -22,6 +23,7 @@ import os
 from shapely.geometry import shape, Polygon
 from scipy.stats.mstats import mquantiles
 from scipy.interpolate import interp1d
+import geopandas as gpd
 
 def combine_models(ecmwf_available, eccc_available, ncep_available,
                    obs_ecm, obs_ecc, obs_cfsv2,
@@ -399,7 +401,7 @@ def calculate_prob_forecast(obs, fc, hc):
         hc: hindcast
     
     Output:
-        probabilistic_fc: probabilistic output
+        probabilistic_fc: probabilistic output (already in %)
     
     '''
     
@@ -618,6 +620,69 @@ def plot_skill_score(value, obs, levels, cmap, extend, title, fig_dir, filename)
     plt.title(title, fontsize=25)
     plt.tight_layout()
     plt.savefig(fig_dir + filename)
+    
+# Define a function to plot skill scores
+def plot_skill_score_aggregated(value, levels, cmap, extend, title, fig_dir, filename, shp_fn):
+    '''
+    Plot the skill scores of hindcast skill analysis, from aggregated data
+    
+    Input:
+        value: np.array: array with the values to plot
+        levels: list: the levels to show in the figure
+        cmap: str or mpl.colormap: the colormap to use
+        extend: str: extend option of matplotlib
+        title: str: title of the figure
+        fig_dir: str: directory to store the figure
+        filename: str: filename of the figure
+        shp_fn: str: path and name of the .shp file, containing the shape data
+    
+    Output:
+        The figure is stored under filename in fig_dir
+    '''
+    gpd_data = gpd.read_file(shp_fn)
+    
+    gpd_data['value'] = value[:,0]
+
+    plt.figure(figsize=(10,8.5))
+
+    # Set the axes using the specified map projection
+    ax=plt.axes(projection=ccrs.PlateCarree())
+    ax.set_extent([87,93,20,27])
+    
+    # Generate descrete colormaps
+    cmap_d = plt.get_cmap(cmap).copy()
+    norm = plt.Normalize(vmin=levels[0],vmax=levels[-1])
+    cmap_descrete = mpl.colors.ListedColormap(cmap_d(norm(levels[:-1])))
+    cmap_descrete.set_bad(color='grey')
+     
+    # Make a filled contour plot
+    cs = gpd_data.plot(column='value', ax=ax, cmap=cmap_descrete, norm=norm)
+    
+    sm = plt.cm.ScalarMappable(cmap=cmap_descrete, norm=norm)
+    sm.set_array([])
+  
+    cbar = plt.colorbar(sm, ax=ax, extend=extend)
+    cbar.ax.tick_params(labelsize=18)
+    
+    # Add coastlines
+    ax.coastlines()
+    ax.add_feature(cf.BORDERS)
+    
+    # Define the xticks for longitude
+    ax.set_xticks(np.arange(87,93,2), crs=ccrs.PlateCarree())
+    lon_formatter = cticker.LongitudeFormatter()
+    ax.xaxis.set_major_formatter(lon_formatter)
+    ax.xaxis.set_tick_params(labelsize=14)
+    
+    # Define the yticks for latitude
+    ax.set_yticks(np.arange(20,27,2), crs=ccrs.PlateCarree())
+    lat_formatter = cticker.LatitudeFormatter()
+    ax.yaxis.set_major_formatter(lat_formatter)
+    ax.yaxis.set_tick_params(labelsize=14)
+
+    plt.title(title, fontsize=25)
+    plt.tight_layout()
+    plt.savefig(fig_dir + filename)
 
 def plot_forecast(var, period, deterministic_fc_smooth, deterministic_anomaly, 
                   probabilistic_fc_smooth, fig_dir_fc, model, modeldatestr,
@@ -763,6 +828,216 @@ def plot_forecast(var, period, deterministic_fc_smooth, deterministic_anomaly,
     cbar2a = plt.colorbar(cs_bn, ax=axes[2], cax=cax2a, orientation='horizontal', ticks=[40,60,80])
     cbar2b = plt.colorbar(cs_nn, ax=axes[2], cax=cax2b, orientation='horizontal', ticks=[40,50])
     cbar2c = plt.colorbar(cs_an, ax=axes[2], cax=cax2c, orientation='horizontal', ticks=[40,60,80])
+
+    cbar2a.ax.tick_params(labelsize=12)
+    cbar2b.ax.tick_params(labelsize=12)
+    cbar2c.ax.tick_params(labelsize=12)
+    
+    cbar2a.set_label('BN (%)', fontsize=14)
+    cbar2b.set_label('NN (%)', fontsize=14)
+    cbar2c.set_label('AN (%)', fontsize=14)
+
+    axes[0].set_title('Deterministic forecast', fontsize=18)
+    axes[1].set_title('Forecast anomaly', fontsize=18)
+    axes[2].set_title('Probabilistic forecast', fontsize=18)
+
+    plt.subplots_adjust(wspace=0.025, hspace=0.025, bottom=0.15)
+    plt.tight_layout()
+    plt.savefig(fig_dir_fc + f'fc_{var}_{period}_{model}_{modeldatestr}.eps', format='eps', bbox_inches='tight')    
+    plt.savefig(fig_dir_fc + f'fc_{var}_{period}_{model}_{modeldatestr}.png', format='png', bbox_inches='tight')
+    
+def plot_forecast_aggregated(var, period, deterministic_fc_smooth, deterministic_anomaly, 
+                  probabilistic_fc_smooth, fig_dir_fc, model, modeldatestr,
+                  fc_type, shp_fn):
+    '''
+    Make a figure with the deterministic, anomaly and probabilistic forecast 
+    as png and as eps format.
+    
+    Input:
+        var: str: variable code
+        period: str: lead time of the fcst
+        deterministic_fc_smooth: xr.DataArray: the smoothed deterministic forecast
+        deterministic_anomaly: xr.DataArray: the deterministic anomaly forecast
+        probabilictic_fc_smooth: xr.DataArray: the smoothed probabilistic forecast
+        fig_dir_fc: str: the directory to store the figures
+        model: str: name of the model
+        modeldatestr: str: string with the modeldate
+        fc_type: str: 'seasonal' or 'sub-seasonal'
+        shp_fn: str: path and name of the .shp file, containing the shape data
+    
+    Ouput:
+        2 figures with the forecast are stored in fig_dir_fc:
+            a png figure
+            a eps figure (vector format)
+    '''
+    
+    gpd_data = gpd.read_file(shp_fn)
+    
+    # Set the metadata for the figures
+    if var == 'tmin':
+        cmap_det = 'gist_ncar'
+        cmap_anom = 'RdBu_r'
+        cmap_below = 'Blues'
+        cmap_above = 'YlOrRd'
+        levels_det = np.linspace(5,30,26)
+        ticks_det = np.linspace(5,30,6)
+        levels_anom = np.linspace(-6,6,25)
+        ticks_anom = np.linspace(-6,6,5)
+        label_det = u'Minimum temperature (\N{DEGREE SIGN}C)'
+        label_anom = u'Temperature anomaly (\N{DEGREE SIGN}C)'
+        cbar_fr_min = 0.1
+        cbar_fr_max = 0.6
+    elif var == 'tmax':
+        cmap_det = 'gist_ncar'
+        cmap_anom = 'RdBu_r'
+        cmap_below = 'Blues'
+        cmap_above = 'YlOrRd'
+        levels_det = np.linspace(15,45,31)
+        ticks_det = np.linspace(15,45,7)
+        levels_anom = np.linspace(-6,6,25)
+        ticks_anom = np.linspace(-6,6,5)
+        label_det = u'Maximum temperature (\N{DEGREE SIGN}C)'
+        label_anom = u'Temperature anomaly (\N{DEGREE SIGN}C)'
+        cbar_fr_min = 0.3
+        cbar_fr_max = 0.85
+    elif var == 'tp':
+        # Set negative values to 0
+        deterministic_fc_smooth.values[deterministic_fc_smooth.values <= 0.] = 0.
+        
+        # Make the maximum of precipitation dyanmic
+        max_tp = np.nanmax(deterministic_fc_smooth)
+        
+        # Ceil value up to next 10
+        max_tp = math.ceil(max_tp/10)*10
+        
+        if max_tp < 30:
+            # Set the maximum at 30 mm if the maximum is lower
+            max_tp = 30.
+        
+        norm_det = mpl.colors.Normalize(vmin=0, vmax=max_tp)
+        cmap_det = cmocean.cm.haline_r
+        cmap_anom = 'BrBG'
+        cmap_below = 'YlOrRd'
+        cmap_above = 'Greens'
+        levels_det = np.linspace(0,max_tp,17)
+        ticks_det = np.linspace(0,max_tp,5)
+        if fc_type == 'sub-seasonal':
+            levels_anom = np.linspace(-50,50,21)
+            ticks_anom = np.linspace(-50,50,5)
+        elif fc_type == 'seasonal':
+            levels_anom = np.linspace(-200,200,21)
+            ticks_anom = np.linspace(-200,200,5)
+        label_det = 'Precipitation (mm)'
+        label_anom = 'Precipitation anomaly (mm)'
+        cbar_fr_min = 0
+        cbar_fr_max = 1
+
+    # Preprocess the probabilistic data
+    if float(probabilistic_fc_smooth.max()) < 1.:
+        bn_fc = 100*probabilistic_fc_smooth[0,0]
+        nn_fc = 100*probabilistic_fc_smooth[1,0]
+        an_fc = 100*probabilistic_fc_smooth[2,0]
+    else:
+        bn_fc = probabilistic_fc_smooth[0,0]
+        nn_fc = probabilistic_fc_smooth[1,0]
+        an_fc = probabilistic_fc_smooth[2,0]
+    
+    levels_outer = np.linspace(40,80,9)
+    levels_inner = np.linspace(40,50,3)
+    
+    cmap_nn = plt.get_cmap('Greys').copy()
+    cmap_nn.set_over('lightgray')
+    
+    # Generate descrete colormaps
+    cmap_det_d = plt.get_cmap(cmap_det).copy()
+    cmap_det_dnew = cmap_det_d(np.linspace(cbar_fr_min, cbar_fr_max, 100))
+    norm_det = plt.Normalize(vmin=levels_det[0],vmax=levels_det[-1])
+    cmap_det_descrete_rest = mpl.colors.LinearSegmentedColormap.from_list('cmap_det_descrete', cmap_det_dnew)
+    cmap_det_descrete = mpl.colors.ListedColormap(cmap_det_descrete_rest(norm_det(levels_det[:-1])))
+    cmap_det_descrete.set_bad(color='grey')
+    
+    cmap_anom_d = plt.get_cmap(cmap_anom).copy()
+    norm_anom = plt.Normalize(vmin=levels_anom[0],vmax=levels_anom[-1])
+    cmap_anom_descrete = mpl.colors.ListedColormap(cmap_anom_d(norm_anom(levels_anom[:-1])))
+    cmap_anom_descrete.set_bad(color='grey')
+    
+    cmap_an_d = plt.get_cmap(cmap_above).copy()
+    norm_an = plt.Normalize(vmin=levels_outer[0],vmax=levels_outer[-1])
+    cmap_an_descrete = mpl.colors.ListedColormap(cmap_an_d(norm_an(levels_outer[:-1])))
+    cmap_an_descrete.set_bad(color='grey')
+    
+    cmap_nn_d = plt.get_cmap(cmap_nn).copy()
+    norm_nn = mpl.colors.Normalize(vmin=levels_inner[0],vmax=levels_inner[-1])
+    cmap_nn_descrete = mpl.colors.ListedColormap(cmap_nn_d(norm_an(levels_inner[:-1])))
+    cmap_nn_descrete.set_bad(color='grey')
+    
+    cmap_bn_d = plt.get_cmap(cmap_below).copy()
+    norm_bn = plt.Normalize(vmin=levels_outer[0],vmax=levels_outer[-1])
+    cmap_bn_descrete = mpl.colors.ListedColormap(cmap_bn_d(norm_bn(levels_outer[:-1])))
+    cmap_bn_descrete.set_bad(color='grey')
+    
+    # Insert aggregated data in geopandas
+    
+    gpd_data['deterministic'] = deterministic_fc_smooth[:,0].values
+    gpd_data['anomaly'] = deterministic_anomaly[:,0].values
+    # Set the values that need to be shown as the cat. > 33%
+    bn_fc_masked = xr.where(bn_fc[:,0] > 40, bn_fc[:,0], np.nan)
+    nn_fc_masked = xr.where(nn_fc[:,0] > 40, nn_fc[:,0], np.nan)
+    an_fc_masked = xr.where(an_fc[:,0] > 40, an_fc[:,0], np.nan)
+    gpd_data['bn_fc'] = bn_fc_masked.values
+    gpd_data['nn_fc'] = nn_fc_masked.values
+    gpd_data['an_fc'] = an_fc_masked.values
+    
+    # Make the figure
+    fig, axes = plt.subplots(1,3, figsize=(12,5), subplot_kw={'projection': ccrs.PlateCarree()})
+    
+    # Set the axes using the specified map projection
+    for ax in axes:
+        ax.set_extent([88.0,92.7,20.6,26.7])
+        ax.set_axis_off()
+        ax.coastlines(zorder=5)
+        ax.add_feature(cf.BORDERS, zorder=5)
+     
+    # Make a filled contour plot
+    gpd_data.plot(column='deterministic', ax=axes[0], cmap=cmap_det_descrete, norm=norm_det)
+    sm_det = plt.cm.ScalarMappable(cmap=cmap_det_descrete, norm=norm_det)
+    
+
+    cax0 = inset_axes(axes[0], width='100%', height='5%', loc='lower left', 
+                      bbox_to_anchor=(0., -0.05, 1, 1), bbox_transform=axes[0].transAxes, borderpad=0.1)
+    cbar0 = plt.colorbar(sm_det, ax=axes[0], cax=cax0, orientation='horizontal', ticks=ticks_det, extend='both')
+    cbar0.set_label(label_det, fontsize=14)
+    cbar0.ax.tick_params(labelsize=12)
+
+    # Make a filled contour plot
+    gpd_data.plot(column='anomaly', ax=axes[1], cmap=cmap_anom_descrete, norm=norm_anom)
+    sm_anom = plt.cm.ScalarMappable(cmap=cmap_anom_descrete, norm=norm_anom)
+
+    cax1 = inset_axes(axes[1], width='100%', height='5%', loc='lower left', 
+                      bbox_to_anchor=(0., -0.05, 1, 1), bbox_transform=axes[1].transAxes, borderpad=0.1)
+    cbar1 = plt.colorbar(sm_anom, ax=axes[1], cax=cax1, orientation='horizontal', ticks=ticks_anom, extend='both')
+    cbar1.set_label(label_anom, fontsize=14)
+    cbar1.ax.tick_params(labelsize=12)
+    
+    # Make a filled contour plot
+    gpd_data.plot(column='nn_fc', ax=axes[2], cmap=cmap_nn_descrete, norm=norm_nn)
+    gpd_data.plot(column='an_fc', ax=axes[2], cmap=cmap_an_descrete, norm=norm_an)
+    gpd_data.plot(column='bn_fc', ax=axes[2], cmap=cmap_bn_descrete, norm=norm_bn)
+    
+    sm_an = plt.cm.ScalarMappable(cmap=cmap_bn_descrete, norm=norm_bn)
+    sm_nn = plt.cm.ScalarMappable(cmap=cmap_nn_descrete, norm=norm_nn)
+    sm_bn = plt.cm.ScalarMappable(cmap=cmap_an_descrete, norm=norm_an)
+    
+    cax2a = inset_axes(axes[2], width='35%', height='5%', loc='lower left', 
+                       bbox_to_anchor=(0., -0.05, 1, 1), bbox_transform=axes[2].transAxes, borderpad=0.1)
+    cax2b = inset_axes(axes[2], width='15%', height='5%', loc='lower center', 
+                       bbox_to_anchor=(0., -0.05, 1, 1), bbox_transform=axes[2].transAxes, borderpad=0.05)
+    cax2c = inset_axes(axes[2], width='35%', height='5%', loc='lower right', 
+                       bbox_to_anchor=(0., -0.05, 1, 1), bbox_transform=axes[2].transAxes, borderpad=0.1)
+    
+    cbar2a = plt.colorbar(sm_an, ax=axes[2], cax=cax2a, orientation='horizontal', ticks=[40,60,80], extend='max')
+    cbar2b = plt.colorbar(sm_nn, ax=axes[2], cax=cax2b, orientation='horizontal', ticks=[40,50], extend='max')
+    cbar2c = plt.colorbar(sm_bn, ax=axes[2], cax=cax2c, orientation='horizontal', ticks=[40,60,80], extend='max')
 
     cbar2a.ax.tick_params(labelsize=12)
     cbar2b.ax.tick_params(labelsize=12)
