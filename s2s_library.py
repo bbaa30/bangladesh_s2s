@@ -4,7 +4,6 @@
 Created on Mon Feb  6 09:01:33 2023
 
 @author: bob
-Modified by: Lorenzo: addition of plotting functions for aggregated data
 """
 import numpy as np
 import xarray as xr
@@ -873,14 +872,22 @@ def plot_forecast_aggregated(var, period, deterministic_fc_smooth, deterministic
     
     gpd_data = gpd.read_file(shp_fn)
     
+    maxval = np.nanmax(deterministic_fc_smooth)
+    minval = np.nanmin(deterministic_fc_smooth)
+    
     # Set the metadata for the figures
     if var == 'tmin':
-        cmap_det = 'gist_ncar'
+        cmap_det = 'Reds'
         cmap_anom = 'RdBu_r'
         cmap_below = 'Blues'
         cmap_above = 'YlOrRd'
-        levels_det = np.linspace(5,30,26)
-        ticks_det = np.linspace(5,30,6)
+        
+        min_tmin = np.floor(minval) - 1
+        max_tmin = np.ceil(maxval) + 1
+        dt = max_tmin - min_tmin + 1
+        
+        levels_det = np.linspace(min_tmin,max_tmin,dt)
+        ticks_det = np.linspace(min_tmin,max_tmin,dt)
         levels_anom = np.linspace(-6,6,25)
         ticks_anom = np.linspace(-6,6,5)
         label_det = u'Minimum temperature (\N{DEGREE SIGN}C)'
@@ -888,12 +895,17 @@ def plot_forecast_aggregated(var, period, deterministic_fc_smooth, deterministic
         cbar_fr_min = 0.1
         cbar_fr_max = 0.6
     elif var == 'tmax':
-        cmap_det = 'gist_ncar'
+        cmap_det = 'Reds'
         cmap_anom = 'RdBu_r'
         cmap_below = 'Blues'
         cmap_above = 'YlOrRd'
-        levels_det = np.linspace(15,45,31)
-        ticks_det = np.linspace(15,45,7)
+        
+        min_tmax = np.floor(minval) - 1
+        max_tmax = np.ceil(maxval) + 1
+        dt = max_tmax - min_tmax + 1
+        
+        levels_det = np.linspace(min_tmax,max_tmax,dt)
+        ticks_det = np.linspace(min_tmax,max_tmax,dt)
         levels_anom = np.linspace(-6,6,25)
         ticks_anom = np.linspace(-6,6,5)
         label_det = u'Maximum temperature (\N{DEGREE SIGN}C)'
@@ -905,14 +917,22 @@ def plot_forecast_aggregated(var, period, deterministic_fc_smooth, deterministic
         deterministic_fc_smooth.values[deterministic_fc_smooth.values <= 0.] = 0.
         
         # Make the maximum of precipitation dyanmic
-        max_tp = np.nanmax(deterministic_fc_smooth)
-        
-        # Ceil value up to next 10
-        max_tp = math.ceil(max_tp/10)*10
-        
-        if max_tp < 30:
-            # Set the maximum at 30 mm if the maximum is lower
-            max_tp = 30.
+        if maxval <= 40:
+            max_tp = 40.
+        elif maxval > 40 and maxval <= 80:
+            max_tp = 80.
+        elif maxval > 80 and maxval <= 120:
+            max_tp = 120.
+        elif maxval > 120 and maxval <= 200:
+            max_tp = 200.
+        elif maxval > 200 and maxval <= 300:
+            max_tp = 300.
+        elif maxval > 300 and maxval <= 400:
+            max_tp = 400.
+        elif maxval > 400 and maxval <= 600:
+            max_tp = 600.
+        else:
+            max_tp = 1000.
         
         norm_det = mpl.colors.Normalize(vmin=0, vmax=max_tp)
         cmap_det = cmocean.cm.haline_r
