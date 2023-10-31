@@ -15,6 +15,7 @@ import numpy as np
 import xarray as xr
 import requests
 import time
+import shutil
 
 from configparser import ConfigParser
 
@@ -72,8 +73,11 @@ for timelag in [4,3,2,1]:
             # Set the target location
             target_location = direc + modeldate.strftime("%Y%m%d%H/")
             
-            if not os.path.exists(target_location):
-                os.makedirs(target_location)
+            # If already a part of the download is available, remove it and start again
+            if os.path.exists(target_location):
+                shutil.rmtree(target_location)
+            # Create a new and emtpy directory
+            os.makedirs(target_location)
             
             # Loop over all forecast times. Each time step has a separate file on 
             # the NOMADS server and needs to be downloaded separately

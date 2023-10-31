@@ -45,7 +45,7 @@ lib_dir = config['paths']['library']
 sys.path.append(lib_dir)
 import s2s_library as s2s
 
-input_dir = direc + 'input_regrid/'
+input_gen_dir = direc + 'input_regrid/'
 fig_dir_hc = direc + 'output_figures_hindcast/' 
 fig_dir_fc = direc + 'output_figures_forecast/' 
 output_dir = direc + 'output_forecast/' 
@@ -161,6 +161,7 @@ fc_shp = {}
 for timedelta in range(7):
     modeldate = today - datetime.timedelta(timedelta)
     modeldatestr = modeldate.strftime("%Y%m%d")
+    datestr = modeldate.strftime("%d%b").lower()
     
     # Make a forecast for each variable
     for var in varnames.keys():
@@ -168,6 +169,8 @@ for timedelta in range(7):
     
         resample = varnames[var]['resample']
         varunit = varnames[var]['unit']
+        
+        input_dir = input_gen_dir + datestr + "/"
         
         ######################################################
         ##                                                  ##
@@ -368,7 +371,12 @@ for timedelta in range(7):
                 ##                                                  ##
                 ######################################################
 
-                if skill_analysis == True:                
+                if skill_analysis == True:
+                    
+                    # Set name of datadirectory for this run
+                    fig_dir_hc = fig_dir_hc + datestr + "/"
+                    if not os.path.exists(fig_dir_hc):
+                        os.makedirs(fig_dir_hc)
                 
                     # Resample data to only specific period
                     obs_wk, fc_wk, hc_wk = s2s.resample_data(obs, fc_daily, hc_daily, var,
@@ -627,6 +635,10 @@ for timedelta in range(7):
                     probabilistic_fc_smooth = xc.gaussian_smooth(probabilistic_forecast, x_sample_dim='time', x_feature_dim= 'member',  kernel=0)
                     
                 # Plot the forecast
+                fig_dir_fc = fig_dir_fc + datestr + "/"
+                if not os.path.exists(fig_dir_fc):
+                    os.makedirs(fig_dir_fc)
+                
                 s2s.plot_forecast_aggregated(var, period, deterministic_fc_smooth,
                                   deterministic_anomaly, probabilistic_fc_smooth,
                                   fig_dir_fc, hc_model, modeldatestr, 'sub-seasonal', shp_fn)
@@ -789,6 +801,11 @@ for timedelta in range(7):
             
     # Save the data if there is data
     if len(model_info) > 1 or len(model_info) == 1 and single_model:
+        
+        output_dir = output_dir + datestr + "/"
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        
         # Save the divisional output in a json file for the bulletin
         with open(output_dir+f'{shape_name}_forecast_{modeldatestr}.json', 'w') as jsfile:
             json.dump(fc_shp, jsfile)

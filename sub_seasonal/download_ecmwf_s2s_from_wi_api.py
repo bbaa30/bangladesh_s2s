@@ -17,8 +17,11 @@ from configparser import ConfigParser
 config = ConfigParser()
 config.read('/srv/config/config_bd_s2s.ini')
 
+today = datetime.date.today()
+today_str = today.strftime("%d%m")
+
 # Set the directories from the config file
-output_dir = config['paths']['s2s_dir'] + 'input_ecmwf/'
+output_dir = config['paths']['s2s_dir'] + 'input_ecmwf/' + today_str + '/'
 
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)

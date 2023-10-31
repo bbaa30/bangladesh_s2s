@@ -27,10 +27,10 @@ direc = config['paths']['s2s_dir']
 
 input_dir_ec = direc + 'input_ecmwf/'
 input_dir_obs = config['paths']['data_dir'] + 'input_bmd_gridded_data/'
-output = direc + 'input_regrid/'
+output_dir = direc + 'input_regrid/'
 
-if not os.path.exists(output):
-    os.makedirs(output)
+if not os.path.exists(output_dir):
+    os.makedirs(output_dir)
 
 # Set the date of today
 today = datetime.datetime.today()
@@ -55,7 +55,8 @@ for timedelta in range(6):
     # Set the modeldate
     modeldate = today - datetime.timedelta(timedelta)
     modeldatestr = modeldate.strftime("%Y%m%d")
-    
+    datestr = modeldate.strftime("%d%b").lower()
+
     # Try to prepare the data for the specific modeldate
     # And continue to the next day if there is no data available
     try:
@@ -136,7 +137,11 @@ for timedelta in range(6):
             
             obs = obs[days_to_take_obs]
             ec_hc_daily = ec_hc_daily[days_to_take_hc]
-     
+
+            output = output_dir + datestr + "/"
+            if not os.path.exists(output):
+                os.makedirs(output)
+                        
             print('Save the data')
             fn_hc = f"{output}ecmwf_hc_regrid_{var}_{modeldatestr}.nc"
             fn_fc = f"{output}ecmwf_fc_regrid_{var}_{modeldatestr}.nc"

@@ -32,11 +32,8 @@ config.read('/srv/config/config_bd_s2s.ini')
 direc = config['paths']['s2s_dir'] 
 home_dir = config['paths']['home']
 template_dir = home_dir + 'bulletin_template/'
-input_fig_dir = direc + 'output_figures_forecast/'
-output_dir = direc + 'output_bulletin/'
-
-if not os.path.exists(output_dir):
-    os.makedirs(output_dir)
+generic_fig_dir = direc + 'output_figures_forecast/'
+gen_output_dir = direc + 'output_bulletin/'
 
 # Set the date of today
 today = datetime.datetime.today()
@@ -46,12 +43,22 @@ today = datetime.datetime(today.year,
                           0,0)
 
 aggregation_level = 'district' # Choose from division or district
+
+#########################################################################
+####                                                                 ####
+####      Choose model option (multi_model, ecmwf, eccc, ncep)       ####
+####                                                                 ####
+#########################################################################
 model = 'multi_model'
 
 # Loop over the last 5 days to find the most recent data
 for timedelta in range(5): 
     modeldate = today - datetime.timedelta(timedelta)
     modeldatestr = modeldate.strftime("%Y%m%d")
+    datestr = modeldate.strftime("%d%b").lower()
+    
+    input_fig_dir = generic_fig_dir + datestr + "/"
+    output_dir = gen_output_dir + datestr + "/"
     
     try:
         # Load the divisional forecast data (to add in the tables)
@@ -115,6 +122,10 @@ for timedelta in range(5):
         
         # Render automated report
         template.render(context)
+        
+        # Make outputdir if not existing
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
         
         # Save the report
         filename = f'{output_dir}S2S_forecast_bulletin_{modeldatestr}_{aggregation_level}.docx'
