@@ -13,6 +13,8 @@ import xcast as xc
 import datetime
 import os
 import numpy as np
+import logging
+import traceback
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -29,17 +31,24 @@ direc = config['paths']['s2s_dir']
 input_dir_model = direc + 'input_ncep/'
 input_dir_obs = config['paths']['data_dir']  + 'input_bmd_gridded_data/'
 output_dir = direc + 'input_regrid/'
+log_dir = config['paths']['home'] + 'logs/'
 
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
-
+if not os.path.exists(log_dir):
+    os.makedirs(log_dir)
+    
 # Set the date of today
 today = datetime.datetime.today()
 today = datetime.datetime(today.year,
                           today.month,
                           today.day,
                           0,0)
+todaystr = today.strftime("%Y%m%d")
 
+# Configure logging
+logging.basicConfig(filename=log_dir+f'prepare_ncep_{todaystr}.log', filemode='w', level=logging.INFO)
+logging.info("Start script at "+str(datetime.datetime.now()))
 
 # List the variable names with a key and name in the NCEP files
 varnames = {'tmax': {'obs_filename': 'tmax',
@@ -187,6 +196,11 @@ for timedelta in range(1,6):
             fc_daily.to_netcdf(fn_fc)
             hc_daily.to_netcdf(fn_hc)
 
-    except:
+        logging.info("Script finished successful at "+str(datetime.datetime.now()))
+
+    except Exception as e:
+        print(e)
         print(f'No data available for {modeldate}. Continue to previous day.')
+        logging.warning(f"No data available for {modeldate}. Continue to previous day.")
+        logging.warning(traceback.format_exc())
         continue

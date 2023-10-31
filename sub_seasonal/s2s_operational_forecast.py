@@ -26,6 +26,8 @@ import shapefile
 import geopandas as gpd
 import pandas as pd
 import json
+import logging
+import traceback
 from scipy.stats import percentileofscore
 
 import warnings
@@ -40,6 +42,7 @@ config.read('/srv/config/config_bd_s2s.ini')
 # Set the directories from the config file
 direc = config['paths']['s2s_dir']
 home_dir = config['paths']['home']
+log_dir = config['paths']['home'] + 'logs/'
 
 lib_dir = config['paths']['library']
 sys.path.append(lib_dir)
@@ -57,13 +60,20 @@ if not os.path.exists(fig_dir_fc):
     os.makedirs(fig_dir_fc)
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
-    
+if not os.path.exists(log_dir):
+    os.makedirs(log_dir)
+
 # Set today's date
 today = datetime.datetime.today()
 today = datetime.datetime(today.year,
                           today.month,
                           today.day,
                           0,0)
+todaystr = today.strftime("%Y%m%d")
+
+# Configure logging
+logging.basicConfig(filename=log_dir+f's2s_forecast_{todaystr}.log', filemode='w', level=logging.INFO)
+logging.info("Start script at "+str(datetime.datetime.now()))
 
 ######## OPTION TO EXCLUDE MODELS FROM MULTIMODEL! ###########
 include_ecmwf = True
@@ -264,6 +274,7 @@ for timedelta in range(7):
         
         # If there is no data available, continue
         if models == 'No data':
+            logging.info(f'No data available for {modeldate}, continue')
             print(f'No data available for {modeldate}, continue')
             break
         
@@ -273,9 +284,11 @@ for timedelta in range(7):
                                          'observations': obs_mm}
             
         if (len(model_info) == 1) and (single_model == False):
-                print('No multi-model: continue')
-                continue
+            logging.info('No multi-model forecast available for {modeldate}, continue')
+            print('No multi-model: continue')
+            continue
         else:
+            logging.info('Perform single model forecast')
             print('Performing single model forecast')
     
         # Set mask to mask all data points outside of Bangladesh
@@ -801,6 +814,8 @@ for timedelta in range(7):
             
     # Save the data if there is data
     if len(model_info) > 1 or len(model_info) == 1 and single_model:
+        
+        logging.info('Save data and exit script')
         
         output_dir = output_dir + datestr + "/"
         if not os.path.exists(output_dir):

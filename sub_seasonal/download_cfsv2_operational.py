@@ -16,6 +16,8 @@ import xarray as xr
 import requests
 import time
 import shutil
+import logging
+import traceback
 
 from configparser import ConfigParser
 
@@ -23,13 +25,17 @@ from configparser import ConfigParser
 config = ConfigParser()
 config.read('/srv/config/config_bd_s2s.ini')
 
+log_dir = config['paths']['home'] + 'logs/'
 direc = config['paths']['s2s_dir'] + 'input_ncep/'
 
 if not os.path.exists(direc):
     os.makedirs(direc)
-
+if not os.path.exists(log_dir):
+    os.makedirs(log_dir)
+    
 # Set current date
 today = datetime.datetime.today()
+todaystr = today.strftime("%Y%m%d")
 
 # Define the grib filter query url
 source_location = 'https://nomads.ncep.noaa.gov/cgi-bin/filter_cfs_flx.pl?file=' 
@@ -53,7 +59,10 @@ def convert_units(ds):
         ds.values[ds.values <= 0] = 0
         ds.attrs['units'] = 'mm'
     return ds
-    
+
+logging.basicConfig(filename=log_dir+f'download_cfsv2_operational_{todaystr}.log', filemode='w', level=logging.INFO)
+logging.info("Start script at "+str(datetime.datetime.now()))
+
 # Download the data for the latest 3 dates for all 4 modelruns (0, 6, 12 and 18 UTC)
 # This gives a total of 12 modelruns to combine to a single lagged ensemble
 for timelag in [4,3,2,1]:
@@ -150,6 +159,9 @@ for timelag in [4,3,2,1]:
                 da_tmin.to_netcdf(fn_tmin)
                 da_tmax.to_netcdf(fn_tmax)
                 da_tp.to_netcdf(fn_tp)
+                
+                logging.info(f"Succesfully saved {fn_tmin}, {fn_tmax} and {fn_tp} at "+str(datetime.datetime.now()))
             
             except:
+                logging.error(traceback.format_exc())
                 print(f'Could not convert to daily values for modeldate: {modeldate}')

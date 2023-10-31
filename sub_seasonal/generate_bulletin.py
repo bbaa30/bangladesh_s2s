@@ -14,6 +14,8 @@ is filled in at the keys and the bulletin will be saved as .docx file.
 import datetime
 import json
 import os
+import logging
+import traceback
 
 # Import properties for the generation of the document
 from docxtpl import DocxTemplate, InlineImage
@@ -34,13 +36,19 @@ home_dir = config['paths']['home']
 template_dir = home_dir + 'bulletin_template/'
 generic_fig_dir = direc + 'output_figures_forecast/'
 gen_output_dir = direc + 'output_bulletin/'
-
+log_dir = config['paths']['home'] + 'logs/'
+    
 # Set the date of today
 today = datetime.datetime.today()
 today = datetime.datetime(today.year,
                           today.month,
                           today.day,
                           0,0)
+todaystr = today.strftime("%Y%m%d")
+
+# Configure logging
+logging.basicConfig(filename=log_dir+f'generate_bulletin_{todaystr}.log', filemode='w', level=logging.INFO)
+logging.info("Start script at "+str(datetime.datetime.now()))
 
 aggregation_level = 'district' # Choose from division or district
 
@@ -134,6 +142,11 @@ for timedelta in range(5):
         
         print(f"Bulletin for {issue_date.strftime('%d %B %Y')} is generated and saved.")
     
-    except:
+        logging.info(f"Bulletin for {issue_date.strftime('%d %B %Y')} is generated and saved.")
+
+    except Exception as e:
+        print(e)
+        print(f'No bulletin can be generated for {issue_date}. Continue to previous day.')
+        logging.warning(f"No bulletin can be generated for {issue_date}. Continue to previous day.")
+        logging.warning(traceback.format_exc())
         continue
-  
