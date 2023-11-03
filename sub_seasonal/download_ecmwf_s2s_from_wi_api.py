@@ -20,7 +20,7 @@ config = ConfigParser()
 config.read('/srv/config/config_bd_s2s.ini')
 
 today = datetime.date.today()
-today_str = today.strftime("%d%m")
+today_str = today.strftime("%d%B").lower()
 
 # Set the directories from the config file
 log_dir = config['paths']['home'] + 'logs/'

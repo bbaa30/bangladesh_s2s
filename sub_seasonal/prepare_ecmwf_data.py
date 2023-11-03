@@ -27,7 +27,7 @@ config.read('/srv/config/config_bd_s2s.ini')
 # Set the directories from the config file
 direc = config['paths']['s2s_dir'] 
 
-input_dir_ec = direc + 'input_ecmwf/'
+input_dir = direc + 'input_ecmwf/'
 input_dir_obs = config['paths']['data_dir'] + 'input_bmd_gridded_data/'
 output_dir = direc + 'input_regrid/'
 log_dir = config['paths']['home'] + 'logs/'
@@ -67,6 +67,7 @@ for timedelta in range(6):
     modeldatestr = modeldate.strftime("%Y%m%d")
     datestr = modeldate.strftime("%d%b").lower()
 
+    input_dir_ec = input_dir + datestr + "/"
     # Try to prepare the data for the specific modeldate
     # And continue to the next day if there is no data available
     try:
